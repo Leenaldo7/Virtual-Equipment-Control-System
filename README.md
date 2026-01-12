@@ -1,8 +1,8 @@
 # Virtual-Equipment-Control-System
 
-# 🏭 Virtual Semiconductor Equipment Control System
+# Virtual Semiconductor Equipment Control System
 
-> **TCP/IP 소켓 통신을 활용한 가상 반도체 장비 데이터 수집 및 제어 시스템** > (Virtual Equipment Data Collection & Control System using C# Socket)
+ **TCP/IP 소켓 통신을 활용한 가상 반도체 장비 데이터 수집 및 제어 시스템**  (Virtual Equipment Data Collection & Control System using C# Socket)
 
 ![Generic badge](https://img.shields.io/badge/Language-C%23-blue.svg)
 ![Generic badge](https://img.shields.io/badge/Framework-.NET_6.0-purple.svg)
@@ -10,8 +10,8 @@
 ![Generic badge](https://img.shields.io/badge/Status-In_Progress-yellow.svg)
 
 ## 1. 프로젝트 개요 (Overview)
-제조업 현장(FAB)의 설비 제어 환경을 이해하기 위해 구축한 **C# 기반의 장비 시뮬레이션 및 제어 프로젝트**입니다. 
-실제 하드웨어 없이 **가상의 장비(Server)**와 **제어 PC(Client)** 프로그램을 각각 구현하여, TCP/IP 네트워크를 통한 실시간 데이터 모니터링 및 원격 제어 기능을 구현하였습니다.
+제조업 현장(FAB)의 설비 제어 환경을 이해하기 위해 구축한 C# 기반의 장비 시뮬레이션 및 제어 프로젝트입니다. 
+실제 하드웨어 없이 가상의 장비(Server)와 제어 PC(Client) 프로그램을 각각 구현하여, TCP/IP 네트워크를 통한 실시간 데이터 모니터링 및 원격 제어 기능을 구현하였습니다.
 
 ### 개발 목표
 * **소켓 통신 이해:** TCP/IP 3-Way Handshake 및 Socket 연결/해제 과정의 코드 레벨 구현.
