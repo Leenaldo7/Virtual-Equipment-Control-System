@@ -14,6 +14,12 @@ namespace VirtualEquipment
         private TcpClient? _client;
         private Thread? _serverThread;
         private volatile bool _running;
+        private enum EquipState { Stopped, Running }
+        private readonly object _stateLock = new();
+        private EquipState _state = EquipState.Stopped;
+        private string? _mode;
+        private int _value;
+
 
         private const int Port = 5000;
 
@@ -94,23 +100,28 @@ namespace VirtualEquipment
                         throw;
                     }
 
-                    _client = accepted;
+                    var client = accepted;
                     Log("[SERVER] Client connected!");
 
-                    try
+                    var t = new Thread(() =>
                     {
-                        HandleClient(_client);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"[SERVER] Client handler error: {ex.Message}");
-                    }
-                    finally
-                    {
-                        try { _client?.Close(); } catch { }
-                        _client = null;
-                        Log("[SERVER] Client disconnected. Back to Accept...");
-                    }
+                        try
+                        {
+                            HandleClient(client);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"[SERVER] Client handler error: {ex.Message}");
+                        }
+                        finally
+                        {
+                            try { client.Close(); } catch { }
+                            Log("[SERVER] Client disconnected.");
+                        }
+                    })
+                    { IsBackground = true };
+
+                    t.Start();
                 }
             }
             catch (Exception ex)
@@ -132,44 +143,100 @@ namespace VirtualEquipment
         private void HandleClient(TcpClient client)
         {
             using NetworkStream ns = client.GetStream();
-            using var reader = new StreamReader(ns, Encoding.UTF8);
-            using var writer = new StreamWriter(ns, Encoding.UTF8) { AutoFlush = true };
+
+            var framer = new StxEtxFramer();
+            var recvBuf = new byte[4096];
 
             while (_running)
             {
-                string? line;
+                int n;
                 try
                 {
-                    line = reader.ReadLine(); // BLOCKING
+                    n = ns.Read(recvBuf, 0, recvBuf.Length); // BLOCKING
                 }
                 catch (IOException)
                 {
-                    // 상대가 끊으면 종종 여기로 옴
+                    break;
+                }
+                catch (ObjectDisposedException)
+                {
                     break;
                 }
 
-                if (line == null) break;
+                if (n <= 0) break;
 
-                Log($"[SERVER] Received: {line}");
+                var frames = framer.Feed(recvBuf.AsSpan(0, n), out var warn);
+                if (warn != null) Log($"[SERVER] Framer warn: {warn}");
 
-                if (line == "HELLO")
+                foreach (var bodyBytes in frames)
                 {
-                    writer.WriteLine("ACK");
-                    Log("[SERVER] Sent: ACK");
-                }
-                else if (line == "BYE")
-                {
-                    writer.WriteLine("BYE");
-                    Log("[SERVER] Sent: BYE (closing)");
-                    break; // 정상 종료
-                }
-                else
-                {
-                    writer.WriteLine("UNKNOWN");
-                    Log("[SERVER] Sent: UNKNOWN");
+                    var body = Encoding.UTF8.GetString(bodyBytes);
+                    Log($"[SERVER] Body: {body}");
+
+                    if (!PacketParser.TryParse(body, out var pkt, out var err))
+                    {
+                        Log($"[SERVER] Packet FAIL: {err}");
+                        SendFrame(ns, $"ERR|{err}");
+                        continue;
+                    }
+
+                    Log($"[SERVER] Packet OK: {pkt}");
+
+                    // Command 처리
+                    switch (pkt!.Command)
+                    {
+                        case "STATUS":
+                            {
+                                string resp;
+                                lock (_stateLock)
+                                {
+                                    if (_state == EquipState.Stopped)
+                                        resp = "ACK|STATUS|STOPPED";
+                                    else
+                                        resp = $"ACK|STATUS|RUNNING|{_mode}|{_value}";
+                                }
+                                SendFrame(ns, resp);
+                                Log($"[SERVER] Sent: {resp}");
+                                break;
+                            }
+
+                        case "START":
+                            {
+                                // START|A|100 (parser에서 이미 검증됨)
+                                lock (_stateLock)
+                                {
+                                    _state = EquipState.Running;
+                                    _mode = pkt.Params[0];
+                                    _value = int.Parse(pkt.Params[1]);
+                                }
+                                SendFrame(ns, "ACK|START|RUNNING");
+                                Log("[SERVER] Sent: ACK|START|RUNNING");
+                                break;
+                            }
+
+                        case "STOP":
+                            {
+                                lock (_stateLock)
+                                {
+                                    _state = EquipState.Stopped;
+                                    _mode = null;
+                                    _value = 0;
+                                }
+                                SendFrame(ns, "ACK|STOP|STOPPED");
+                                Log("[SERVER] Sent: ACK|STOP|STOPPED");
+                                break;
+                            }
+
+                        default:
+                            SendFrame(ns, $"ERR|{pkt.Command}|UNKNOWN_COMMAND");
+                            Log($"[SERVER] Sent: ERR|{pkt.Command}|UNKNOWN_COMMAND");
+                            break;
+                    }
+
                 }
             }
         }
+
 
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
@@ -217,5 +284,17 @@ namespace VirtualEquipment
         {
 
         }
+
+        private void SendFrame(NetworkStream ns, string body)
+        {
+            var bodyBytes = Encoding.UTF8.GetBytes(body);
+            var packet = new byte[bodyBytes.Length + 2];
+            packet[0] = StxEtxFramer.STX;
+            Buffer.BlockCopy(bodyBytes, 0, packet, 1, bodyBytes.Length);
+            packet[^1] = StxEtxFramer.ETX;
+
+            ns.Write(packet, 0, packet.Length);
+        }
+
     }
 }

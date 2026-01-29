@@ -7,6 +7,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EquipmentManager", "Equipme
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VirtualEquipment", "VirtualEquipment\VirtualEquipment.csproj", "{ACF513B0-38EC-425E-8A4A-C1FEB6E9717C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProtocolTests", "ProtocolTests\ProtocolTests.csproj", "{415FFD2E-8901-4521-9B30-C80C1EB62147}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{ACF513B0-38EC-425E-8A4A-C1FEB6E9717C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{ACF513B0-38EC-425E-8A4A-C1FEB6E9717C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{ACF513B0-38EC-425E-8A4A-C1FEB6E9717C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{415FFD2E-8901-4521-9B30-C80C1EB62147}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{415FFD2E-8901-4521-9B30-C80C1EB62147}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{415FFD2E-8901-4521-9B30-C80C1EB62147}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{415FFD2E-8901-4521-9B30-C80C1EB62147}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

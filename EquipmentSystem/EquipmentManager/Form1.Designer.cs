@@ -7,7 +7,10 @@
         /// </summary>
         private System.ComponentModel.IContainer components = null;
         private Button btnConnect;
-        private Button btnHello;
+        private Button btnHello;   // 이건 STATUS로 재활용
+        private Button btnStart;
+        private Button btnStop;
+
 
 
         /// <summary>
@@ -35,6 +38,9 @@
             btnConnect = new Button();
             btnHello = new Button();
             btnDisconnect = new Button();
+            btnStart = new Button();
+            btnStop = new Button();
+
             SuspendLayout();
             // 
             // txtLog
@@ -64,9 +70,29 @@
             btnHello.Name = "btnHello";
             btnHello.Size = new Size(75, 23);
             btnHello.TabIndex = 2;
-            btnHello.Text = "Send HELLO";
+            btnHello.Text = "STATUS";
             btnHello.UseVisualStyleBackColor = true;
             btnHello.Click += btnHello_Click_1;
+            // 
+            // btnStart
+            // 
+            btnStart.Location = new Point(89, 398);
+            btnStart.Name = "btnStart";
+            btnStart.Size = new Size(75, 23);
+            btnStart.TabIndex = 4;
+            btnStart.Text = "START";
+            btnStart.UseVisualStyleBackColor = true;
+            btnStart.Click += btnStart_Click;
+            // 
+            // btnStop
+            // 
+            btnStop.Location = new Point(170, 398);
+            btnStop.Name = "btnStop";
+            btnStop.Size = new Size(75, 23);
+            btnStop.TabIndex = 5;
+            btnStop.Text = "STOP";
+            btnStop.UseVisualStyleBackColor = true;
+            btnStop.Click += btnStop_Click;
             // 
             // btnDisconnect
             // 
@@ -85,6 +111,8 @@
             ClientSize = new Size(800, 450);
             Controls.Add(btnDisconnect);
             Controls.Add(btnHello);
+            Controls.Add(btnStop);
+            Controls.Add(btnStart);
             Controls.Add(btnConnect);
             Controls.Add(txtLog);
             Name = "Form1";
