@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace EquipmentManager
@@ -10,11 +11,17 @@ namespace EquipmentManager
     {
         private TcpClient? _client;
         private NetworkStream? _ns;
-        private Thread? _recvThread;
-        private volatile bool _connected;
+
+        private CancellationTokenSource? _cts;
+        private Task? _recvTask;
 
         private readonly StxEtxFramer _framer = new StxEtxFramer();
         private readonly byte[] _recvBuf = new byte[4096];
+
+        // 동시에 Send 버튼 연타해도 Write가 엉키지 않게(선택이지만 추천)
+        private readonly SemaphoreSlim _sendLock = new SemaphoreSlim(1, 1);
+
+        private volatile bool _connected;
 
         private const string Host = "127.0.0.1";
         private const int Port = 5000;
@@ -25,7 +32,8 @@ namespace EquipmentManager
             UpdateUi();
         }
 
-        private void btnConnect_Click(object sender, EventArgs e)
+        // Connect 버튼: async로 변경
+        private async void btnConnect_Click(object sender, EventArgs e)
         {
             if (_connected)
             {
@@ -36,63 +44,115 @@ namespace EquipmentManager
             try
             {
                 _client = new TcpClient();
-                Log("[CLIENT] Connecting... (Connect blocks)");
-                _client.Connect(Host, Port); // BLOCKING
-                Log("[CLIENT] Connected!");
+                Log("[CLIENT] Connecting...");
+
+                // UI 안 멈춤
+                await _client.ConnectAsync(Host, Port);
 
                 _ns = _client.GetStream();
+                _cts = new CancellationTokenSource();
+
                 _connected = true;
-
-                _recvThread = new Thread(RecvLoop) { IsBackground = true };
-                _recvThread.Start();
-
                 UpdateUi();
+
+                Log("[CLIENT] Connected!");
+
+                // 백그라운드 수신 루프 시작 (통신 분리 핵심)
+                _recvTask = RecvLoopAsync(_cts.Token);
             }
             catch (Exception ex)
             {
                 Log($"[CLIENT] Connect failed: {ex.Message}");
-                Cleanup();
-                UpdateUi();
+                await DisconnectAsync("Connect failed");
             }
         }
 
-        private void btnDisconnect_Click(object sender, EventArgs e)
+        // Disconnect 버튼
+        private async void btnDisconnect_Click(object sender, EventArgs e)
         {
-            Disconnect("User requested");
+            await DisconnectAsync("User requested");
         }
 
-        // ���� HELLO ��ư: �������� �޽����� ������ (��: STATUS)
-        private void btnHello_Click(object sender, EventArgs e)
+        // STATUS 버튼(기존 btnHello 버튼을 STATUS로 쓰는 경우)
+        private async void btnHello_Click(object sender, EventArgs e)
         {
-            TrySend("STATUS");
+            await TrySendAsync("STATUS");
         }
 
-        private void SendFrame(string body)
+        // START/STOP 버튼을 이미 추가했다면(없으면 무시)
+        private async void btnStart_Click(object sender, EventArgs e)
+        {
+            await TrySendAsync("START|A|100");
+        }
+
+        private async void btnStop_Click(object sender, EventArgs e)
+        {
+            await TrySendAsync("STOP");
+        }
+
+        private async Task TrySendAsync(string body)
+        {
+            if (!_connected || _ns == null)
+            {
+                Log("[CLIENT] Not connected.");
+                return;
+            }
+
+            try
+            {
+                await SendFrameAsync(body);
+                Log($"[CLIENT] Sent frame: {body}");
+            }
+            catch (Exception ex)
+            {
+                Log($"[CLIENT] Send failed: {ex.Message}");
+                await DisconnectAsync("Send failed");
+            }
+        }
+
+        // STX/ETX 프레임 송신 (WriteAsync + lock)
+        private async Task SendFrameAsync(string body)
         {
             if (_ns == null) throw new InvalidOperationException("Not connected.");
 
-            // STX + UTF8(body) + ETX
-            var bodyBytes = Encoding.UTF8.GetBytes(body);
-            var packet = new byte[bodyBytes.Length + 2];
+            byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
+            byte[] packet = new byte[bodyBytes.Length + 2];
             packet[0] = StxEtxFramer.STX;
             Buffer.BlockCopy(bodyBytes, 0, packet, 1, bodyBytes.Length);
             packet[^1] = StxEtxFramer.ETX;
 
-            _ns.Write(packet, 0, packet.Length);
+            await _sendLock.WaitAsync();
+            try
+            {
+                await _ns.WriteAsync(packet, 0, packet.Length);
+            }
+            finally
+            {
+                _sendLock.Release();
+            }
         }
 
-        private void RecvLoop()
+        // 핵심: 수신 루프 async 버전
+        private async Task RecvLoopAsync(CancellationToken ct)
         {
             try
             {
-                while (_connected && _ns != null)
+                while (!ct.IsCancellationRequested && _connected && _ns != null)
                 {
                     int n;
                     try
                     {
-                        n = _ns.Read(_recvBuf, 0, _recvBuf.Length); // BLOCKING
+                        n = await _ns.ReadAsync(_recvBuf, 0, _recvBuf.Length, ct);
                     }
-                    catch
+                    catch (OperationCanceledException)
+                    {
+                        break; // 정상 종료
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        break;
+                    }
+                    catch (IOException)
                     {
                         break;
                     }
@@ -104,18 +164,13 @@ namespace EquipmentManager
 
                     foreach (var bodyBytes in frames)
                     {
-                        var body = Encoding.UTF8.GetString(bodyBytes);
+                        string body = Encoding.UTF8.GetString(bodyBytes);
                         Log($"[CLIENT] Body: {body}");
 
                         if (PacketParser.TryParse(body, out var pkt, out var err))
-                        {
                             Log($"[CLIENT] Packet OK: {pkt}");
-                            // TODO: ���⼭ switch(pkt.Command)�� UI/���� ó��
-                        }
                         else
-                        {
                             Log($"[CLIENT] Packet FAIL: {err}");
-                        }
                     }
                 }
             }
@@ -125,36 +180,60 @@ namespace EquipmentManager
             }
             finally
             {
-                Disconnect("RecvLoop ended");
+                // 수신 루프가 끝났다는 건 연결이 끊겼거나 종료 요청
+                // 이미 끊는 중이면 중복 로그 줄이기 위해 조건 처리
+                if (_connected)
+                    await DisconnectAsync("RecvLoop ended");
             }
         }
 
-        private void Disconnect(string reason)
+        // 안전 종료: Cancel → Close/Dispose로 ReadAsync 깨우기 → 정리
+        private async Task DisconnectAsync(string reason)
         {
             if (!_connected && _client == null && _ns == null)
                 return;
 
             Log($"[CLIENT] Disconnecting... ({reason})");
-            _connected = false;
 
+            _connected = false;
+            UpdateUi();
+
+            try { _cts?.Cancel(); } catch { }
+
+            try { _ns?.Close(); } catch { }
             try { _client?.Close(); } catch { }
 
+            // 수신 태스크가 있으면 잠깐 정리 (UI 블로킹 피하려면 await)
+            try
+            {
+                if (_recvTask != null)
+                    await _recvTask;
+            }
+            catch { /* 종료 중 예외는 무시 */ }
+
             Cleanup();
-            UpdateUi();
+
             Log("[CLIENT] Disconnected.");
+            UpdateUi();
         }
 
         private void Cleanup()
         {
-            _connected = false;
+            _framer.Reset();
+
             _ns = null;
             _client = null;
-            _framer.Reset();
+
+            _cts?.Dispose();
+            _cts = null;
+
+            _recvTask = null;
         }
 
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
-            Disconnect("Form closing");
+            // 폼 닫힐 때는 fire-and-forget (async void로 대기하면 UI 종료가 지연될 수 있음)
+            _ = DisconnectAsync("Form closing");
         }
 
         private void UpdateUi()
@@ -167,9 +246,13 @@ namespace EquipmentManager
 
             btnConnect.Enabled = !_connected;
             btnDisconnect.Enabled = _connected;
+
+            // 기존 btnHello를 STATUS로 쓰는 경우
             btnHello.Enabled = _connected;
-            btnStart.Enabled = _connected;
-            btnStop.Enabled = _connected;
+
+            // START/STOP 버튼이 있으면 활성화 (없으면 컴파일 에러나므로 주석처리)
+            // btnStart.Enabled = _connected;
+            // btnStop.Enabled = _connected;
         }
 
         private void Log(string msg)
@@ -182,47 +265,12 @@ namespace EquipmentManager
             txtLog.AppendText($"{DateTime.Now:HH:mm:ss} {msg}{Environment.NewLine}");
         }
 
-        private void bunDisconnect_Click(object sender, EventArgs e)
+        // 디자이너가 이 핸들러를 쓰면 유지
+        private async void bunDisconnect_Click(object sender, EventArgs e)
         {
-            Disconnect("User requested");
+            await DisconnectAsync("User requested");
         }
 
         private void btnHello_Click_1(object sender, EventArgs e) => btnHello_Click(sender, e);
-
-        private void btnStatus_Click(object sender, EventArgs e)
-        {
-            TrySend("STATUS");
-        }
-
-        private void btnStart_Click(object sender, EventArgs e)
-        {
-            // �ϴ� �׽�Ʈ�� �ϵ��ڵ�
-            TrySend("START|A|100");
-        }
-
-        private void btnStop_Click(object sender, EventArgs e)
-        {
-            TrySend("STOP");
-        }
-        private void TrySend(string body)
-        {
-            if (!_connected || _ns == null)
-            {
-                Log("[CLIENT] Not connected.");
-                return;
-            }
-
-            try
-            {
-                SendFrame(body);
-                Log($"[CLIENT] Sent frame: {body}");
-            }
-            catch (Exception ex)
-            {
-                Log($"[CLIENT] Send failed: {ex.Message}");
-                Disconnect("Send failed");
-            }
-        }
-
     }
 }
