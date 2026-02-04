@@ -89,6 +89,16 @@ namespace EquipmentManager
         {
             await TrySendAsync("STOP");
         }
+        private async void btnForceErr_Click(object sender, EventArgs e)
+        {
+            await TrySendAsync("FORCEERR");
+        }
+
+        private async void btnReset_Click(object sender, EventArgs e)
+        {
+            await TrySendAsync("RESET");
+        }
+
 
         private async Task TrySendAsync(string body)
         {
@@ -253,6 +263,10 @@ namespace EquipmentManager
             // START/STOP 버튼이 있으면 활성화 (없으면 컴파일 에러나므로 주석처리)
             // btnStart.Enabled = _connected;
             // btnStop.Enabled = _connected;
+
+            btnForceErr.Enabled = _connected;
+            btnReset.Enabled = _connected;
+
         }
 
         private void Log(string msg)

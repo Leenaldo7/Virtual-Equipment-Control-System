@@ -8,7 +8,8 @@ public static class PacketParser
     {
         "STATUS", "START", "STOP",
         "ACK", "ERR",
-        "DATA", "ALARM", "RESET" 
+        "DATA", "ALARM", "RESET",
+        "FORCEERR"
     };
 
     /// <summary>
