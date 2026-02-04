@@ -272,5 +272,6 @@ namespace EquipmentManager
         }
 
         private void btnHello_Click_1(object sender, EventArgs e) => btnHello_Click(sender, e);
+
     }
 }
