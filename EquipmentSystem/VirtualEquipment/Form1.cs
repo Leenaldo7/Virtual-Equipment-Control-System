@@ -50,6 +50,8 @@ namespace VirtualEquipment
         private readonly object _clientsLock = new();
         private readonly Dictionary<Guid, ClientConn> _clients = new();
 
+        private string _lastError = "NONE";
+
         public Form1()
         {
             InitializeComponent();
@@ -299,6 +301,24 @@ namespace VirtualEquipment
                                         break;
                                     }
 
+                                case "FORCEERR":
+                                    {
+                                        string resp;
+                                        lock (_stateLock)
+                                        {
+                                            _state = EquipState.ERROR;
+                                            _lastError = "FORCED";
+                                            _rpm = 0;
+                                            resp = $"ACK|STATUS|{_state}|{_lastError}|{_mode}|{_setValue}|{_temp:F1}|{_pressure:F2}|{_rpm}";
+                                        }
+
+
+                                        await SendFrameAsync(conn, resp, serverCt);
+                                        Log($"[SERVER] Sent: {resp}");
+                                        break;
+                                    }
+
+
                                 default:
                                     {
                                         var resp = $"ERR|{cmd}|UNKNOWN_COMMAND";
@@ -392,6 +412,13 @@ namespace VirtualEquipment
                         // IDLE/STOP일 땐 가볍게 쉼
                         await Task.Delay(300, ct);
                     }
+
+                    if (_rpm > 6200)
+                    {
+                        _state = EquipState.ERROR;
+                        _lastError = "OVERSPEED";
+                    }
+
                 }
             }
             catch (OperationCanceledException)
