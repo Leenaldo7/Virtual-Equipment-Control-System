@@ -7,7 +7,8 @@ public static class PacketParser
     private static readonly HashSet<string> Allowed = new(StringComparer.OrdinalIgnoreCase)
     {
         "STATUS", "START", "STOP",
-        "ACK", "ERR"
+        "ACK", "ERR",
+        "DATA", "ALARM", "RESET" 
     };
 
     /// <summary>

@@ -20,7 +20,7 @@ namespace VirtualEquipment
 
         private const int Port = 5000;
 
-        // ====== Day5: 장비 상태 머신 ======
+        // ====== 장비 상태 머신 ======
         private enum EquipState { IDLE, RUN, STOP, ERROR }
 
         private readonly object _stateLock = new();
@@ -34,7 +34,7 @@ namespace VirtualEquipment
         private double _pressure = 1.00;
         private int _rpm = 0;
 
-        // ====== Day5: 연결된 클라이언트 목록(브로드캐스트용) ======
+        // ====== 연결된 클라이언트 목록(브로드캐스트용) ======
         private sealed class ClientConn
         {
             public TcpClient Client { get; }
@@ -78,7 +78,7 @@ namespace VirtualEquipment
 
                 _acceptTask = AcceptLoopAsync(_cts.Token);
 
-                // Day5: 텔레메트리 루프 시작 (RUN일 때만 DATA 브로드캐스트)
+                // 텔레메트리 루프 시작 (RUN일 때만 DATA 브로드캐스트)
                 _telemetryTask = TelemetryLoopAsync(_cts.Token);
             }
             catch (Exception ex)
@@ -200,7 +200,7 @@ namespace VirtualEquipment
 
                             Log($"[SERVER] Packet OK: {pkt}");
 
-                            // ===== Day5: 상태 머신 기반 명령 처리 =====
+                            // ===== 상태 머신 기반 명령 처리 =====
                             var cmd = pkt!.Command.ToUpperInvariant();
 
                             switch (cmd)
@@ -276,7 +276,7 @@ namespace VirtualEquipment
                                         break;
                                     }
 
-                                // Day5 옵션: ERROR 상태에서만 복구
+                                // ERROR 상태에서만 복구
                                 case "RESET":
                                     {
                                         string resp;
@@ -322,7 +322,7 @@ namespace VirtualEquipment
             }
         }
 
-        // ===== Day5: RUN 상태면 주기적으로 센서 데이터 생성 & 브로드캐스트 =====
+        // ===== RUN 상태면 주기적으로 센서 데이터 생성 & 브로드캐스트 =====
         private async Task TelemetryLoopAsync(CancellationToken ct)
         {
             try
