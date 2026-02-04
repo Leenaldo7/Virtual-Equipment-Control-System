@@ -34,6 +34,9 @@ namespace VirtualEquipment
         private double _pressure = 1.00;
         private int _rpm = 0;
 
+        private bool _alarmSentForCurrentError = false;
+
+
         // ====== 연결된 클라이언트 목록(브로드캐스트용) ======
         private sealed class ClientConn
         {
@@ -212,12 +215,13 @@ namespace VirtualEquipment
                                         string resp;
                                         lock (_stateLock)
                                         {
-                                            resp = $"ACK|STATUS|{_state}|{_mode}|{_setValue}|{_temp:F1}|{_pressure:F2}|{_rpm}";
+                                            resp = $"ACK|STATUS|{_state}|{_lastError}|{_mode}|{_setValue}|{_temp:F1}|{_pressure:F2}|{_rpm}";
                                         }
                                         await SendFrameAsync(conn, resp, serverCt);
                                         Log($"[SERVER] Sent: {resp}");
                                         break;
                                     }
+
 
                                 case "START":
                                     {
@@ -243,7 +247,7 @@ namespace VirtualEquipment
                                                 _setValue = value;
 
                                                 _state = EquipState.RUN;
-
+                                                _alarmSentForCurrentError = false;
                                                 // RUN 시작값 세팅
                                                 _rpm = Math.Clamp(value * 10, 0, 6000);
                                                 resp = "ACK|START|RUN";
@@ -287,6 +291,7 @@ namespace VirtualEquipment
                                             if (_state == EquipState.ERROR)
                                             {
                                                 _state = EquipState.IDLE;
+                                                _alarmSentForCurrentError = false;
                                                 _rpm = 0;
                                                 resp = "ACK|RESET|IDLE";
                                             }
@@ -303,20 +308,21 @@ namespace VirtualEquipment
 
                                 case "FORCEERR":
                                     {
-                                        string resp;
                                         lock (_stateLock)
                                         {
                                             _state = EquipState.ERROR;
+                                            _alarmSentForCurrentError = false; // ERROR 새로 발생 -> 알람 1회 허용
                                             _lastError = "FORCED";
                                             _rpm = 0;
-                                            resp = $"ACK|STATUS|{_state}|{_lastError}|{_mode}|{_setValue}|{_temp:F1}|{_pressure:F2}|{_rpm}";
                                         }
 
-
+                                        // FORCEERR에 대한 응답은 FORCEERR로 보내기
+                                        var resp = "ACK|FORCEERR|ERROR";
                                         await SendFrameAsync(conn, resp, serverCt);
                                         Log($"[SERVER] Sent: {resp}");
                                         break;
                                     }
+
 
 
                                 default:
@@ -365,18 +371,19 @@ namespace VirtualEquipment
 
                         if (st == EquipState.RUN)
                         {
-                            // 간단한 “진짜 장비 느낌” 생성 로직
-                            // setValue에 따라 rpm/pressure/temp가 살짝 변동
                             _rpm = Math.Clamp(_rpm + rnd.Next(-50, 51), 0, 6500);
                             _pressure = Math.Clamp(_pressure + (rnd.NextDouble() - 0.5) * 0.05, 0.80, 1.50);
                             _temp = Math.Clamp(_temp + (rnd.NextDouble() - 0.5) * 0.20 + (_rpm / 6500.0) * 0.05, 20.0, 90.0);
 
-                            // 예시: 과속이면 ERROR
                             if (_rpm > 6200)
                             {
                                 _state = EquipState.ERROR;
+                                _lastError = "OVERSPEED";
+                                _alarmSentForCurrentError = false; // ERROR 새로 발생 -> 알람 1회 허용
+                                _rpm = 0; // 선택: 에러 진입시 rpm 0으로 정리
                             }
                         }
+
                         else if (st == EquipState.STOP || st == EquipState.IDLE)
                         {
                             // 멈춘 상태는 서서히 안정화
@@ -403,20 +410,34 @@ namespace VirtualEquipment
                     }
                     else if (st == EquipState.ERROR)
                     {
-                        await BroadcastAsync("ALARM|ERROR|OVERSPEED", ct);
-                        Log("[SERVER] Broadcast: ALARM|ERROR|OVERSPEED");
+                        bool sendAlarm = false;
+                        string alarmMsg;
+
+                        lock (_stateLock)
+                        {
+                            // ERROR 상태에서 아직 알람 안 보냈으면 1회만 전송
+                            if (!_alarmSentForCurrentError)
+                            {
+                                _alarmSentForCurrentError = true;
+                                sendAlarm = true;
+                            }
+
+                            alarmMsg = $"ALARM|ERROR|{_lastError}";
+                        }
+
+                        if (sendAlarm)
+                        {
+                            await BroadcastAsync(alarmMsg, ct);
+                            Log($"[SERVER] Broadcast: {alarmMsg}");
+                        }
+
                         await Task.Delay(500, ct);
                     }
+
                     else
                     {
                         // IDLE/STOP일 땐 가볍게 쉼
                         await Task.Delay(300, ct);
-                    }
-
-                    if (_rpm > 6200)
-                    {
-                        _state = EquipState.ERROR;
-                        _lastError = "OVERSPEED";
                     }
 
                 }

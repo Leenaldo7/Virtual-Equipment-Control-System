@@ -14,7 +14,7 @@
         private Button btnForceErr;
         private Button btnReset;
 
-        private TextBox txtLog;
+        private RichTextBox txtLog;
         private Panel panelBottom;
 
 
@@ -41,7 +41,7 @@
         /// </summary>
         private void InitializeComponent()
         {
-            txtLog = new TextBox();
+            txtLog = new RichTextBox();
             btnConnect = new Button();
             btnHello = new Button();
             btnDisconnect = new Button();
@@ -60,7 +60,7 @@
             txtLog.Multiline = true;
             txtLog.Name = "txtLog";
             txtLog.ReadOnly = true;
-            txtLog.ScrollBars = ScrollBars.Vertical;
+            txtLog.ScrollBars = RichTextBoxScrollBars.Vertical;
             txtLog.Size = new Size(800, 450);
             txtLog.TabIndex = 0;
             // 

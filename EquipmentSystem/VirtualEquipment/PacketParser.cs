@@ -4,10 +4,19 @@ using System.Collections.Generic;
 public static class PacketParser
 {
     // 허용 커맨드(지금 단계)
-    private static readonly HashSet<string> Allowed = new(StringComparer.OrdinalIgnoreCase)
+    public static readonly HashSet<string> Allowed = new(StringComparer.OrdinalIgnoreCase)
     {
-        "STATUS", "START", "STOP"
+        "STATUS",
+        "START",
+        "STOP",
+        "ACK",
+        "ERR",
+        "FORCEERR",
+        "RESET",
+        "DATA",
+        "ALARM",
     };
+
 
     /// <summary>
     /// Body 문자열: "COMMAND|p1|p2..."

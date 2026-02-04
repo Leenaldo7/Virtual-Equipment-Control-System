@@ -25,6 +25,13 @@ namespace EquipmentManager
 
         private const string Host = "127.0.0.1";
         private const int Port = 5000;
+        
+        // 장비 상태
+        private enum EquipState { Unknown, IDLE, RUN, STOP, ERROR }
+        private EquipState _equipState = EquipState.Unknown;
+
+        private string? _lastErrorKeyLogged; // 중복 에러 로그 방지용
+
 
         public Form1()
         {
@@ -108,6 +115,19 @@ namespace EquipmentManager
                 return;
             }
 
+            // ERROR면 RESET/STATUS만 허용 (Disconnect는 별도 버튼)
+            if (_equipState == EquipState.ERROR)
+            {
+                bool allowed = body.StartsWith("STATUS", StringComparison.OrdinalIgnoreCase)
+                            || body.StartsWith("RESET", StringComparison.OrdinalIgnoreCase);
+
+                if (!allowed)
+                {
+                    LogError($"[CLIENT] BLOCKED in ERROR state: {body}");
+                    return;
+                }
+            }
+
             try
             {
                 await SendFrameAsync(body);
@@ -119,6 +139,7 @@ namespace EquipmentManager
                 await DisconnectAsync("Send failed");
             }
         }
+
 
         // STX/ETX 프레임 송신 (WriteAsync + lock)
         private async Task SendFrameAsync(string body)
@@ -177,11 +198,15 @@ namespace EquipmentManager
                         string body = Encoding.UTF8.GetString(bodyBytes);
                         Log($"[CLIENT] Body: {body}");
 
+                        // 파서 성공/실패 상관없이 먼저 상태 갱신 시도
+                        HandleServerMessage(body);
+
                         if (PacketParser.TryParse(body, out var pkt, out var err))
                             Log($"[CLIENT] Packet OK: {pkt}");
                         else
                             Log($"[CLIENT] Packet FAIL: {err}");
                     }
+
                 }
             }
             catch (Exception ex)
@@ -223,8 +248,44 @@ namespace EquipmentManager
 
             Cleanup();
 
+            _equipState = EquipState.Unknown;
             Log("[CLIENT] Disconnected.");
             UpdateUi();
+
+
+        }
+
+        // 장비 상태에 따른 버튼 비활성화
+        private void ApplyEquipState(EquipState st)
+        {
+            _equipState = st;
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => ApplyEquipState(st)));
+                return;
+            }
+
+            // 연결 상태가 아니면 기존 규칙 유지
+            if (!_connected)
+            {
+                btnStart.Enabled = false;
+                btnStop.Enabled = false;
+                btnForceErr.Enabled = false;
+                btnReset.Enabled = false;
+                return;
+            }
+
+            // ERROR면 RESET/Disconnect만 허용(STATUS는 허용)
+            bool isError = (st == EquipState.ERROR);
+
+            btnReset.Enabled = true;                // 연결 중이면 항상 가능(서버가 NOT_IN_ERROR 줄 수도 있음)
+            btnForceErr.Enabled = !isError;         // ERROR 상태면 더 못 누르게
+            btnStart.Enabled = !isError;            // ERROR면 비활성
+            btnStop.Enabled = !isError;             // ERROR면 비활성
+
+            // STATUS 버튼
+            btnHello.Enabled = true;
         }
 
         private void Cleanup()
@@ -254,20 +315,19 @@ namespace EquipmentManager
                 return;
             }
 
+            bool isError = _equipState == EquipState.ERROR;
+
             btnConnect.Enabled = !_connected;
             btnDisconnect.Enabled = _connected;
 
-            // 기존 btnHello를 STATUS로 쓰는 경우
-            btnHello.Enabled = _connected;
-
-            // START/STOP 버튼이 있으면 활성화 (없으면 컴파일 에러나므로 주석처리)
-            // btnStart.Enabled = _connected;
-            // btnStop.Enabled = _connected;
-
-            btnForceErr.Enabled = _connected;
-            btnReset.Enabled = _connected;
+            btnHello.Enabled = _connected;        // STATUS는 항상 OK
+            btnReset.Enabled = _connected;        // 항상 OK
+            btnForceErr.Enabled = _connected && !isError;
+            btnStart.Enabled = _connected && !isError;
+            btnStop.Enabled = _connected && !isError;
 
         }
+
 
         private void Log(string msg)
         {
@@ -286,6 +346,136 @@ namespace EquipmentManager
         }
 
         private void btnHello_Click_1(object sender, EventArgs e) => btnHello_Click(sender, e);
+
+
+        private void HandleServerMessage(string body)
+        {
+            // FORCEERR 응답 즉시 ERROR 잠금
+            if (body.StartsWith("ACK|FORCEERR|", StringComparison.OrdinalIgnoreCase))
+            {
+                _equipState = EquipState.ERROR;
+                LogErrorOnce("FORCEERR", $"[CLIENT] {body}");
+                UpdateUi();
+                return;
+            }
+
+            // START 응답이면 RUN으로
+            if (body.StartsWith("ACK|START|", StringComparison.OrdinalIgnoreCase))
+            {
+                _equipState = EquipState.RUN;
+                UpdateUi();
+                return;
+            }
+
+            // STOP 응답이면 STOP으로
+            if (body.StartsWith("ACK|STOP|", StringComparison.OrdinalIgnoreCase))
+            {
+                _equipState = EquipState.STOP;
+                UpdateUi();
+                return;
+            }
+
+            // 서버가 에러를 주면 ERROR로 잠금
+            if (body.StartsWith("ERR|", StringComparison.OrdinalIgnoreCase))
+            {
+                if (body.Contains("|IN_ERROR", StringComparison.OrdinalIgnoreCase))
+                {
+                    _equipState = EquipState.ERROR;
+                    LogErrorOnce(body, $"[CLIENT] {body}"); // 메시지 자체를 key로 써도 됨
+                    UpdateUi();
+                    return;
+                }
+            }
+
+
+            if (body.StartsWith("ALARM|ERROR|", StringComparison.OrdinalIgnoreCase))
+            {
+                _equipState = EquipState.ERROR;
+                LogErrorOnce("ALARM_ERROR", $"[CLIENT] {body}");
+                UpdateUi();
+                return;
+            }
+
+
+            if (body.StartsWith("ACK|STATUS|", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = body.Split('|');
+                if (parts.Length >= 3)
+                {
+                    _equipState = ParseEquipState(parts[2]);
+                    if (_equipState == EquipState.ERROR)
+                        LogErrorOnce("STATUS_ERROR", $"[CLIENT] {body}");
+                    UpdateUi();
+                }
+                return;
+            }
+
+            if (body.StartsWith("ACK|RESET|", StringComparison.OrdinalIgnoreCase))
+            {
+                _equipState = EquipState.IDLE;
+                _lastErrorKeyLogged = null;
+                UpdateUi();
+                return;
+            }
+
+
+            if (body.Contains("|IN_ERROR", StringComparison.OrdinalIgnoreCase))
+            {
+                _equipState = EquipState.ERROR;
+                LogError($"[CLIENT] {body}");
+                UpdateUi();
+                return;
+            }
+        }
+
+
+        private EquipState ParseEquipState(string s)
+        {
+            s = s.Trim().ToUpperInvariant();
+            return s switch
+            {
+                "IDLE" => EquipState.IDLE,
+                "RUN" => EquipState.RUN,
+                "STOP" => EquipState.STOP,
+                "STOPPED" => EquipState.STOP,
+                "ERROR" => EquipState.ERROR,
+                _ => EquipState.Unknown
+            };
+        }
+        private void LogError(string msg)
+        {
+            if (txtLog.InvokeRequired)
+            {
+                txtLog.BeginInvoke(new Action(() => LogError(msg)));
+                return;
+            }
+
+            // txtLog가 RichTextBox일 때만 부분 색상 가능
+            if (txtLog is RichTextBox rtb)
+            {
+                rtb.SelectionStart = rtb.TextLength;
+                rtb.SelectionLength = 0;
+                rtb.SelectionColor = System.Drawing.Color.Red;
+                rtb.AppendText($"{DateTime.Now:HH:mm:ss} {msg}{Environment.NewLine}");
+                rtb.SelectionColor = rtb.ForeColor;
+            }
+            else
+            {
+                // TextBox면 색상 불가 → 접두어로 강조
+                txtLog.AppendText($"{DateTime.Now:HH:mm:ss} [ERROR] {msg}{Environment.NewLine}");
+            }
+        }
+
+        private void LogErrorOnce(string key, string msg)
+        {
+            // 같은 key면 한 번만 찍음
+            if (string.Equals(_lastErrorKeyLogged, key, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            _lastErrorKeyLogged = key;
+            LogError(msg);
+        }
+
 
     }
 }
