@@ -4,6 +4,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Drawing;
 
 namespace EquipmentManager
 {
@@ -249,10 +250,23 @@ namespace EquipmentManager
             Cleanup();
 
             _equipState = EquipState.Unknown;
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() =>
+                {
+                    lblLastError.Text = "ERR: NONE";
+                    lblLastError.ForeColor = Color.Black;
+                }));
+            }
+            else
+            {
+                lblLastError.Text = "ERR: NONE";
+                lblLastError.ForeColor = Color.Black;
+            }
+
             Log("[CLIENT] Disconnected.");
             UpdateUi();
-
-
         }
 
         // 장비 상태에 따른 버튼 비활성화
@@ -331,7 +345,6 @@ namespace EquipmentManager
 
             lblState.Text = $"STATE: {_equipState}";
             lblState.ForeColor = (_equipState == EquipState.ERROR) ? System.Drawing.Color.Red : System.Drawing.Color.Black;
-
         }
 
 
@@ -518,7 +531,6 @@ namespace EquipmentManager
             _lastErrorKeyLogged = key;
             LogError(msg);
         }
-
 
     }
 }
