@@ -68,6 +68,9 @@
 
             panelBottom = new Panel();
 
+            lblMode = new Label();
+            lblSetValue = new Label();
+
             lblConn = new Label();
             lblState = new Label();
             lblLastError = new Label();
@@ -182,6 +185,16 @@
             lblRpm.Name = "lblRpm";
             lblRpm.Text = "RPM: -";
 
+            lblMode.AutoSize = true;
+            lblMode.Location = new Point(440, 72);
+            lblMode.Name = "lblMode";
+            lblMode.Text = "MODE: -";
+
+            lblSetValue.AutoSize = true;
+            lblSetValue.Location = new Point(520, 72);
+            lblSetValue.Name = "lblSetValue";
+            lblSetValue.Text = "SET: -";
+
             // ===================== txtLog =====================
             txtLog.Dock = DockStyle.Fill;
             txtLog.Location = new Point(0, 0);
@@ -193,8 +206,9 @@
             // ===================== splitMain =====================
             splitMain.Dock = DockStyle.Fill;
             splitMain.Orientation = Orientation.Vertical;     // 좌/우 분할
-            splitMain.SplitterDistance = 520;                 // 왼쪽(로그) 폭
             splitMain.Name = "splitMain";
+            splitMain.SplitterWidth = 6;
+            splitMain.IsSplitterFixed = false;
 
             // 왼쪽: txtLog
             txtLog.Dock = DockStyle.Fill;
@@ -208,7 +222,8 @@
             dgvData.AllowUserToDeleteRows = false;
             dgvData.RowHeadersVisible = false;
             dgvData.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            dgvData.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            dgvData.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+            dgvData.ScrollBars = ScrollBars.Both;
             dgvData.MultiSelect = false;
 
             // 컬럼 추가
@@ -219,6 +234,15 @@
             dgvData.Columns.Add("colRpm", "RPM");
             dgvData.Columns.Add("colMode", "Mode");
             dgvData.Columns.Add("colSet", "Set");
+
+            dgvData.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+            dgvData.Columns["colTime"].Width = 110;
+            dgvData.Columns["colState"].Width = 70;
+            dgvData.Columns["colTemp"].Width = 70;
+            dgvData.Columns["colPress"].Width = 70;
+            dgvData.Columns["colRpm"].Width = 80;
+            dgvData.Columns["colMode"].Width = 60;
+            dgvData.Columns["colSet"].Width = 60;
 
             splitMain.Panel2.Controls.Add(dgvData);
 
@@ -238,6 +262,8 @@
             panelBottom.Controls.Add(lblTemp);
             panelBottom.Controls.Add(lblPressure);
             panelBottom.Controls.Add(lblRpm);
+            panelBottom.Controls.Add(lblMode);
+            panelBottom.Controls.Add(lblSetValue);
 
 
             // ===================== Form =====================
@@ -251,6 +277,7 @@
             Controls.Add(panelBottom);
 
             ResumeLayout(false);
+            PerformLayout();
         }
 
 

@@ -36,6 +36,8 @@ namespace VirtualEquipment
 
         private bool _alarmSentForCurrentError = false;
 
+        private bool _alarmSent;
+
 
         // ====== 연결된 클라이언트 목록(브로드캐스트용) ======
         private sealed class ClientConn
@@ -296,6 +298,7 @@ namespace VirtualEquipment
                                                 _alarmSentForCurrentError = false;
                                                 _rpm = 0;
                                                 _lastError = "NONE";
+                                                _alarmSent = false;
                                                 resp = "ACK|RESET|IDLE";
                                             }
                                             else
@@ -317,6 +320,7 @@ namespace VirtualEquipment
                                             _alarmSentForCurrentError = false; // ERROR 새로 발생 -> 알람 1회 허용
                                             _lastError = "FORCED";
                                             _rpm = 0;
+                                            _alarmSent = false;
                                         }
 
                                         // FORCEERR에 대한 응답은 FORCEERR로 보내기
@@ -413,25 +417,22 @@ namespace VirtualEquipment
                     }
                     else if (st == EquipState.ERROR)
                     {
-                        bool sendAlarm = false;
-                        string alarmMsg;
-
+                        bool needAlarm = false;
+                        string err;
                         lock (_stateLock)
                         {
-                            // ERROR 상태에서 아직 알람 안 보냈으면 1회만 전송
-                            if (!_alarmSentForCurrentError)
+                            if (!_alarmSent)
                             {
-                                _alarmSentForCurrentError = true;
-                                sendAlarm = true;
+                                _alarmSent = true;
+                                needAlarm = true;
                             }
-
-                            alarmMsg = $"ALARM|ERROR|{_lastError}";
+                            err = _lastError;
                         }
 
-                        if (sendAlarm)
+                        if (needAlarm)
                         {
-                            await BroadcastAsync(alarmMsg, ct);
-                            Log($"[SERVER] Broadcast: {alarmMsg}");
+                            await BroadcastAsync($"ALARM|ERROR|{err}", ct);
+                            Log($"[SERVER] Broadcast: ALARM|ERROR|{err}");
                         }
 
                         await Task.Delay(500, ct);

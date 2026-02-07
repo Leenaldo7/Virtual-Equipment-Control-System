@@ -35,9 +35,31 @@ namespace EquipmentManager
 
         private const int MaxRows = 50;
 
+
         public Form1()
         {
             InitializeComponent();
+
+            // splitMain이 null이 아니고, InitializeComponent에서 생성된 상태여야 함
+            Shown += (_, __) =>
+            {
+                try
+                {
+                    if (splitMain == null) return;
+
+                    splitMain.Panel1MinSize = 300;
+                    splitMain.Panel2MinSize = 260;
+
+                    int min = splitMain.Panel1MinSize;
+                    int max = splitMain.Width - splitMain.Panel2MinSize - splitMain.SplitterWidth;
+                    if (max < min) return; // 폭이 너무 작으면 그냥 건너뜀
+
+                    splitMain.SplitterDistance = Math.Max(min, Math.Min(520, max));
+                }
+                catch { /* 무시 */ }
+            };
+
+            EnsureGridColumns();
             UpdateUi();
         }
 
@@ -47,6 +69,7 @@ namespace EquipmentManager
             if (_connected)
             {
                 Log("[CLIENT] Already connected.");
+                await TrySendAsync("STATUS");
                 return;
             }
 
@@ -365,6 +388,8 @@ namespace EquipmentManager
                 return;
             }
             txtLog.AppendText($"{DateTime.Now:HH:mm:ss} {msg}{Environment.NewLine}");
+            txtLog.SelectionStart = txtLog.TextLength;
+            txtLog.ScrollToCaret();
         }
 
         // 디자이너가 이 핸들러를 쓰면 유지
@@ -384,15 +409,15 @@ namespace EquipmentManager
                 var parts = body.Split('|');
                 if (parts.Length >= 7)
                 {
-                    SetTimeUi(parts[1]);
-                    SetModeUi(parts[2]);
-                    SetSetValueUi(parts[3]);
-                    SetTempUi(parts[4]);
-                    SetPressureUi(parts[5]);
-                    SetRpmUi(parts[6]);
+                    var ts = parts[1];
+                    var mode = parts[2];
+                    var setv = parts[3];
+                    var temp = parts[4];
+                    var press = parts[5];
+                    var rpm = parts[6];
 
-                    // 표 누적
-                    AddRowToGrid(parts[1], _equipState.ToString(), parts[4], parts[5], parts[6], parts[2], parts[3]);
+                    AddTelemetryRow(ts, _equipState.ToString(), temp, press, rpm, mode, setv);
+                    SetTelemetryLabels(ts, temp, press, rpm, mode, setv);
                 }
                 return; // DATA는 파서 OK/FAIL과 무관하게 UI만 갱신
             }
@@ -563,12 +588,16 @@ namespace EquipmentManager
                 rtb.SelectionColor = System.Drawing.Color.Red;
                 rtb.AppendText($"{DateTime.Now:HH:mm:ss} {msg}{Environment.NewLine}");
                 rtb.SelectionColor = rtb.ForeColor;
+                rtb.SelectionStart = rtb.TextLength;
+                rtb.ScrollToCaret();
             }
             else
             {
                 // TextBox면 색상 불가 → 접두어로 강조
                 txtLog.AppendText($"{DateTime.Now:HH:mm:ss} [ERROR] {msg}{Environment.NewLine}");
             }
+
+
         }
 
         private void LogErrorOnce(string key, string msg)
@@ -673,9 +702,71 @@ namespace EquipmentManager
             // 맨 위에 최신값이 올라오게 0번에 Insert
             dgvData.Rows.Insert(0, time, state, temp, press, rpm, mode, setValue);
 
+            var row = dgvData.Rows[0];
+            if (string.Equals(state, "ERROR", StringComparison.OrdinalIgnoreCase))
+            {
+                row.DefaultCellStyle.ForeColor = System.Drawing.Color.Red;
+                row.DefaultCellStyle.Font = new System.Drawing.Font(dgvData.Font, System.Drawing.FontStyle.Bold);
+            }
+
             // 최대 개수 유지
             while (dgvData.Rows.Count > MaxRows)
                 dgvData.Rows.RemoveAt(dgvData.Rows.Count - 1);
         }
+
+        private void EnsureGridColumns()
+        {
+            dgvData.AutoGenerateColumns = false;
+            dgvData.Columns.Clear();
+
+            dgvData.Columns.Add(new DataGridViewTextBoxColumn { Name = "colTime", HeaderText = "Time", Width = 110 });
+            dgvData.Columns.Add(new DataGridViewTextBoxColumn { Name = "colState", HeaderText = "State", Width = 70 });
+            dgvData.Columns.Add(new DataGridViewTextBoxColumn { Name = "colTemp", HeaderText = "Temp", Width = 70 });
+            dgvData.Columns.Add(new DataGridViewTextBoxColumn { Name = "colPress", HeaderText = "Press", Width = 70 });
+            dgvData.Columns.Add(new DataGridViewTextBoxColumn { Name = "colRpm", HeaderText = "RPM", Width = 80 });
+            dgvData.Columns.Add(new DataGridViewTextBoxColumn { Name = "colMode", HeaderText = "Mode", Width = 60 });
+            dgvData.Columns.Add(new DataGridViewTextBoxColumn { Name = "colSet", HeaderText = "Set", Width = 60 });
+
+            dgvData.AllowUserToAddRows = false;
+            dgvData.RowHeadersVisible = false;
+            dgvData.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            dgvData.MultiSelect = false;
+        }
+
+        private void AddTelemetryRow(string ts, string state, string temp, string press, string rpm, string mode, string setv)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => AddTelemetryRow(ts, state, temp, press, rpm, mode, setv)));
+                return;
+            }
+
+            dgvData.Rows.Add(ts, state, temp, press, rpm, mode, setv);
+
+            while (dgvData.Rows.Count > MaxRows)
+                dgvData.Rows.RemoveAt(0);   // 오래된(위쪽) 제거
+
+            // 자동 스크롤
+            if (dgvData.Rows.Count > 0)
+                dgvData.FirstDisplayedScrollingRowIndex = dgvData.Rows.Count - 1;
+        }
+
+        private void SetTelemetryLabels(string ts, string temp, string press, string rpm, string mode, string setv)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => SetTelemetryLabels(ts, temp, press, rpm, mode, setv)));
+                return;
+            }
+
+            lblTime.Text = $"TIME: {ts}";
+            lblTemp.Text = $"TEMP: {temp}";
+            lblPressure.Text = $"PRESS: {press}";
+            lblRpm.Text = $"RPM: {rpm}";
+            lblMode.Text = $"MODE: {mode}";
+            lblSetValue.Text = $"SET: {setv}";
+        }
+
+
     }
 }

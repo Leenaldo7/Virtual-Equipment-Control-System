@@ -33,66 +33,56 @@
             txtLog = new TextBox();
             btnStart = new Button();
             btnStop = new Button();
-            panelTop = new Panel();
-            panelTop.SuspendLayout();
+            panelBottom = new Panel();
+
             SuspendLayout();
-            // 
+
             // txtLog
-            // 
             txtLog.Dock = DockStyle.Fill;
-            txtLog.Location = new Point(0, 0);
             txtLog.Multiline = true;
-            txtLog.Name = "txtLog";
             txtLog.ReadOnly = true;
             txtLog.ScrollBars = ScrollBars.Vertical;
-            txtLog.Size = new Size(800, 450);
+            txtLog.Name = "txtLog";
             txtLog.TabIndex = 0;
-            txtLog.TextChanged += txtLog_TextChanged;
-            // 
+
+            // panelBottom
+            panelBottom.Dock = DockStyle.Bottom;
+            panelBottom.Height = 90;
+            panelBottom.Name = "panelBottom";
+
             // btnStart
-            // 
             btnStart.Location = new Point(12, 12);
+            btnStart.Size = new Size(110, 28);
             btnStart.Name = "btnStart";
-            btnStart.Size = new Size(75, 23);
-            btnStart.TabIndex = 1;
-            btnStart.Text = "btnStart";
+            btnStart.Text = "Start Server";
             btnStart.UseVisualStyleBackColor = true;
             btnStart.Click += btnStart_Click;
-            // 
+
             // btnStop
-            // 
-            btnStop.Location = new Point(12, 41);
+            btnStop.Location = new Point(12, 46);
+            btnStop.Size = new Size(110, 28);
             btnStop.Name = "btnStop";
-            btnStop.Size = new Size(75, 23);
-            btnStop.TabIndex = 2;
             btnStop.Text = "Stop Server";
             btnStop.UseVisualStyleBackColor = true;
             btnStop.Click += btnStop_Click_1;
-            // 
-            // panelTop
-            // 
-            panelTop.Controls.Add(btnStart);
-            panelTop.Controls.Add(btnStop);
-            panelTop.Dock = DockStyle.Bottom;
-            panelTop.Location = new Point(0, 373);
-            panelTop.Name = "panelTop";
-            panelTop.Size = new Size(800, 77);
-            panelTop.TabIndex = 3;
-            panelTop.Paint += panelTop_Paint;
-            // 
+
+            panelBottom.Controls.Add(btnStart);
+            panelBottom.Controls.Add(btnStop);
+
             // Form1
-            // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(800, 450);
-            Controls.Add(panelTop);
-            Controls.Add(txtLog);
+            MinimumSize = new Size(800, 450);
             Name = "Form1";
-            Text = "Form1";
+            Text = "VirtualEquipment";
             Load += Form1_Load;
-            panelTop.ResumeLayout(false);
+
+            Controls.Clear();
+            Controls.Add(panelBottom); // Bottom 먼저
+            Controls.Add(txtLog);      // Fill 나중에
+
             ResumeLayout(false);
-            PerformLayout();
         }
 
         #endregion
@@ -100,5 +90,6 @@
         private Button btnStart;
         private Button btnStop;
         private Panel panelTop;
+        private Panel panelBottom;
     }
 }
