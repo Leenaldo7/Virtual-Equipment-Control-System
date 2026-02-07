@@ -62,7 +62,7 @@ namespace EquipmentManager
 
                 _connected = true;
                 UpdateUi();
-
+                SetConnUi(true);
                 Log("[CLIENT] Connected!");
 
                 // 백그라운드 수신 루프 시작 (통신 분리 핵심)
@@ -197,6 +197,15 @@ namespace EquipmentManager
                     foreach (var bodyBytes in frames)
                     {
                         string body = Encoding.UTF8.GetString(bodyBytes);
+
+                        // DATA면 로그 최소화 + UI만 갱신
+                        if (body.StartsWith("DATA|", StringComparison.OrdinalIgnoreCase))
+                        {
+                            HandleServerMessage(body);   // 여기서 라벨만 갱신
+                            continue;
+                        }
+
+                        // 나머지는 로그 찍기
                         Log($"[CLIENT] Body: {body}");
 
                         // 파서 성공/실패 상관없이 먼저 상태 갱신 시도
@@ -250,6 +259,10 @@ namespace EquipmentManager
             Cleanup();
 
             _equipState = EquipState.Unknown;
+
+            SetConnUi(false);
+            SetStateUi("UNKNOWN");
+            SetLastErrorUi("NONE");
 
             if (InvokeRequired)
             {
@@ -375,12 +388,12 @@ namespace EquipmentManager
                 var parts = body.Split('|');
                 if (parts.Length >= 7)
                 {
-                    var ts = parts[1];
-                    var temp = parts[4];
-                    var press = parts[5];
-                    var rpm = parts[6];
-
-                    SetTelemetryUi(ts, temp, press, rpm);
+                    SetTimeUi(parts[1]);
+                    SetModeUi(parts[2]);
+                    SetSetValueUi(parts[3]);
+                    SetTempUi(parts[4]);
+                    SetPressureUi(parts[5]);
+                    SetRpmUi(parts[6]);
                 }
                 return; // DATA는 파서 OK/FAIL과 무관하게 UI만 갱신
             }
@@ -461,6 +474,7 @@ namespace EquipmentManager
                 if (body.StartsWith("ALARM|ERROR|", StringComparison.OrdinalIgnoreCase))
                 {
                     _equipState = EquipState.ERROR;
+                    SetStateUi("ERROR");
 
                     // ALARM|ERROR|FORCED 같은 포맷
                     var parts = body.Split('|');
@@ -480,15 +494,20 @@ namespace EquipmentManager
                 if (parts.Length >= 4)
                 {
                     _equipState = ParseEquipState(parts[2]);
+                    SetStateUi(parts[2]);
                     SetLastErrorUi(parts[3]);
 
                     // Telemetry 라벨 갱신(STATUS에도 값 들어있음)
                     if (parts.Length >= 9)
                     {
-                        var temp = parts[6];
-                        var press = parts[7];
-                        var rpm = parts[8];
-                        SetTelemetryUi(DateTime.Now.ToString("HH:mm:ss"), temp, press, rpm);
+                        _equipState = ParseEquipState(parts[2]);
+                        SetLastErrorUi(parts[3]);
+                        SetModeUi(parts[4]);
+                        SetSetValueUi(parts[5]);
+                        SetTempUi(parts[6]);
+                        SetPressureUi(parts[7]);
+                        SetRpmUi(parts[8]);
+                        UpdateUi();
                     }
 
                     if (_equipState == EquipState.ERROR)
@@ -506,6 +525,7 @@ namespace EquipmentManager
                 {
                     _equipState = EquipState.IDLE;
                     _lastErrorKeyLogged = null;
+                    SetStateUi("IDLE");
                     SetLastErrorUi("NONE");
                     UpdateUi();
                     return;
@@ -598,6 +618,59 @@ namespace EquipmentManager
             lblRpm.Text = $"RPM: {rpm}";
         }
 
+        // ========== UI Setter Helpers ==========
+
+        private void SetConnUi(bool connected)
+        {
+            if (InvokeRequired) { BeginInvoke(new Action(() => SetConnUi(connected))); return; }
+            lblConn.Text = connected ? "CONNECTED" : "DISCONNECTED";
+            lblConn.ForeColor = connected ? System.Drawing.Color.Green : System.Drawing.Color.Gray;
+        }
+
+        private void SetStateUi(string state)
+        {
+            if (InvokeRequired) { BeginInvoke(new Action(() => SetStateUi(state))); return; }
+            lblState.Text = $"STATE: {state}";
+            lblState.ForeColor = state.Equals("ERROR", StringComparison.OrdinalIgnoreCase)
+                ? System.Drawing.Color.Red
+                : System.Drawing.Color.Black;
+        }
+
+        private void SetTimeUi(string t)
+        {
+            if (InvokeRequired) { BeginInvoke(new Action(() => SetTimeUi(t))); return; }
+            lblTime.Text = $"TIME: {t}";
+        }
+
+        private void SetTempUi(string temp)
+        {
+            if (InvokeRequired) { BeginInvoke(new Action(() => SetTempUi(temp))); return; }
+            lblTemp.Text = $"TEMP: {temp}";
+        }
+
+        private void SetPressureUi(string press)
+        {
+            if (InvokeRequired) { BeginInvoke(new Action(() => SetPressureUi(press))); return; }
+            lblPressure.Text = $"PRESS: {press}";
+        }
+
+        private void SetRpmUi(string rpm)
+        {
+            if (InvokeRequired) { BeginInvoke(new Action(() => SetRpmUi(rpm))); return; }
+            lblRpm.Text = $"RPM: {rpm}";
+        }
+
+        private void SetModeUi(string mode)
+        {
+            if (InvokeRequired) { BeginInvoke(new Action(() => SetModeUi(mode))); return; }
+            if (lblMode != null) lblMode.Text = $"MODE: {mode}";
+        }
+
+        private void SetSetValueUi(string setValue)
+        {
+            if (InvokeRequired) { BeginInvoke(new Action(() => SetSetValueUi(setValue))); return; }
+            if (lblSetValue != null) lblSetValue.Text = $"SET: {setValue}";
+        }
 
 
     }

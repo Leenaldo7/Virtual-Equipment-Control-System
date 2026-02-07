@@ -26,7 +26,8 @@
         private Label lblTemp;
         private Label lblPressure;
         private Label lblRpm;
-
+        private Label lblMode;
+        private Label lblSetValue;
 
         /// <summary>
         ///  Clean up any resources being used.
