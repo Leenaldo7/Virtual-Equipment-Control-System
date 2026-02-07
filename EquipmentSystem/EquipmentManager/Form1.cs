@@ -372,10 +372,14 @@ namespace EquipmentManager
             // FORCEERR 응답 즉시 ERROR 잠금
             if (body.StartsWith("ACK|FORCEERR|", StringComparison.OrdinalIgnoreCase))
             {
-                _equipState = EquipState.ERROR;
-                LogErrorOnce("FORCEERR", $"[CLIENT] {body}");
-                UpdateUi();
-                return;
+                if (body.StartsWith("ACK|FORCEERR|", StringComparison.OrdinalIgnoreCase))
+                {
+                    _equipState = EquipState.ERROR;
+                    SetLastErrorUi("FORCED");
+                    LogErrorOnce("FORCEERR", $"[CLIENT] {body}");
+                    UpdateUi();
+                    return;
+                }
             }
 
             // START 응답이면 RUN으로
@@ -438,24 +442,40 @@ namespace EquipmentManager
 
             if (body.StartsWith("ALARM|ERROR|", StringComparison.OrdinalIgnoreCase))
             {
-                _equipState = EquipState.ERROR;
-                LogErrorOnce("ALARM_ERROR", $"[CLIENT] {body}");
-                UpdateUi();
-                return;
+                if (body.StartsWith("ALARM|ERROR|", StringComparison.OrdinalIgnoreCase))
+                {
+                    _equipState = EquipState.ERROR;
+
+                    // ALARM|ERROR|FORCED 같은 포맷
+                    var parts = body.Split('|');
+                    var reason = (parts.Length >= 3) ? parts[2] : "UNKNOWN";
+                    SetLastErrorUi(reason);
+
+                    LogErrorOnce("ALARM_ERROR", $"[CLIENT] {body}");
+                    UpdateUi();
+                    return;
+                }
             }
 
 
             if (body.StartsWith("ACK|STATUS|", StringComparison.OrdinalIgnoreCase))
             {
-                var parts = body.Split('|');
-                if (parts.Length >= 3)
+                if (body.StartsWith("ACK|STATUS|", StringComparison.OrdinalIgnoreCase))
                 {
-                    _equipState = ParseEquipState(parts[2]);
-                    if (_equipState == EquipState.ERROR)
-                        LogErrorOnce("STATUS_ERROR", $"[CLIENT] {body}");
-                    UpdateUi();
+                    var parts = body.Split('|');
+                    // 0 ACK, 1 STATUS, 2 STATE, 3 lastError ...
+                    if (parts.Length >= 4)
+                    {
+                        _equipState = ParseEquipState(parts[2]);
+                        SetLastErrorUi(parts[3]);
+
+                        if (_equipState == EquipState.ERROR)
+                            LogErrorOnce("STATUS_ERROR", $"[CLIENT] {body}");
+
+                        UpdateUi();
+                    }
+                    return;
                 }
-                return;
             }
 
             if (body.StartsWith("ACK|RESET|", StringComparison.OrdinalIgnoreCase))
@@ -464,14 +484,11 @@ namespace EquipmentManager
                 {
                     _equipState = EquipState.IDLE;
                     _lastErrorKeyLogged = null;
-
-                    // UI 에러 라벨 초기화
-                    lblLastError.Text = "ERR: NONE";
-                    lblLastError.ForeColor = System.Drawing.Color.Black;
-
+                    SetLastErrorUi("NONE");
                     UpdateUi();
                     return;
                 }
+
             }
 
 
@@ -531,6 +548,20 @@ namespace EquipmentManager
             _lastErrorKeyLogged = key;
             LogError(msg);
         }
+
+        private void SetLastErrorUi(string err)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => SetLastErrorUi(err)));
+                return;
+            }
+
+            lblLastError.Text = $"ERR: {err}";
+            lblLastError.ForeColor =
+                string.Equals(err, "NONE", StringComparison.OrdinalIgnoreCase) ? Color.Black : Color.Red;
+        }
+
 
     }
 }

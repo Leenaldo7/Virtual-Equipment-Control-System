@@ -22,7 +22,10 @@
         private RichTextBox txtLog;
         private Panel panelBottom;
 
-
+        private Label lblTime;
+        private Label lblTemp;
+        private Label lblPressure;
+        private Label lblRpm;
 
 
         /// <summary>
