@@ -33,6 +33,7 @@ namespace EquipmentManager
 
         private string? _lastErrorKeyLogged; // 중복 에러 로그 방지용
 
+        private const int MaxRows = 50;
 
         public Form1()
         {
@@ -210,11 +211,6 @@ namespace EquipmentManager
 
                         // 파서 성공/실패 상관없이 먼저 상태 갱신 시도
                         HandleServerMessage(body);
-
-                        if (PacketParser.TryParse(body, out var pkt, out var err))
-                            Log($"[CLIENT] Packet OK: {pkt}");
-                        else
-                            Log($"[CLIENT] Packet FAIL: {err}");
                     }
 
                 }
@@ -394,6 +390,9 @@ namespace EquipmentManager
                     SetTempUi(parts[4]);
                     SetPressureUi(parts[5]);
                     SetRpmUi(parts[6]);
+
+                    // 표 누적
+                    AddRowToGrid(parts[1], _equipState.ToString(), parts[4], parts[5], parts[6], parts[2], parts[3]);
                 }
                 return; // DATA는 파서 OK/FAIL과 무관하게 UI만 갱신
             }
@@ -663,6 +662,20 @@ namespace EquipmentManager
             if (lblSetValue != null) lblSetValue.Text = $"SET: {setValue}";
         }
 
+        private void AddRowToGrid(string time, string state, string temp, string press, string rpm, string mode, string setValue)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => AddRowToGrid(time, state, temp, press, rpm, mode, setValue)));
+                return;
+            }
 
+            // 맨 위에 최신값이 올라오게 0번에 Insert
+            dgvData.Rows.Insert(0, time, state, temp, press, rpm, mode, setValue);
+
+            // 최대 개수 유지
+            while (dgvData.Rows.Count > MaxRows)
+                dgvData.Rows.RemoveAt(dgvData.Rows.Count - 1);
+        }
     }
 }

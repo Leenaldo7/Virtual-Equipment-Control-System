@@ -29,6 +29,9 @@
         private Label lblMode;
         private Label lblSetValue;
 
+        private SplitContainer splitMain;
+        private DataGridView dgvData;
+
         /// <summary>
         ///  Clean up any resources being used.
         /// </summary>
@@ -51,6 +54,9 @@
         private void InitializeComponent()
         {
             txtLog = new RichTextBox();
+
+            splitMain = new SplitContainer();
+            dgvData = new DataGridView();
 
             btnConnect = new Button();
             btnDisconnect = new Button();
@@ -176,7 +182,47 @@
             lblRpm.Name = "lblRpm";
             lblRpm.Text = "RPM: -";
 
-            // panelBottom에 컨트롤 추가
+            // ===================== txtLog =====================
+            txtLog.Dock = DockStyle.Fill;
+            txtLog.Location = new Point(0, 0);
+            txtLog.Name = "txtLog";
+            txtLog.ReadOnly = true;
+            txtLog.ScrollBars = RichTextBoxScrollBars.Vertical;
+            txtLog.TabIndex = 0;
+
+            // ===================== splitMain =====================
+            splitMain.Dock = DockStyle.Fill;
+            splitMain.Orientation = Orientation.Vertical;     // 좌/우 분할
+            splitMain.SplitterDistance = 520;                 // 왼쪽(로그) 폭
+            splitMain.Name = "splitMain";
+
+            // 왼쪽: txtLog
+            txtLog.Dock = DockStyle.Fill;
+            splitMain.Panel1.Controls.Add(txtLog);
+
+            // 오른쪽: dgvData
+            dgvData.Dock = DockStyle.Fill;
+            dgvData.Name = "dgvData";
+            dgvData.ReadOnly = true;
+            dgvData.AllowUserToAddRows = false;
+            dgvData.AllowUserToDeleteRows = false;
+            dgvData.RowHeadersVisible = false;
+            dgvData.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            dgvData.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            dgvData.MultiSelect = false;
+
+            // 컬럼 추가
+            dgvData.Columns.Add("colTime", "Time");
+            dgvData.Columns.Add("colState", "State");
+            dgvData.Columns.Add("colTemp", "Temp");
+            dgvData.Columns.Add("colPress", "Press");
+            dgvData.Columns.Add("colRpm", "RPM");
+            dgvData.Columns.Add("colMode", "Mode");
+            dgvData.Columns.Add("colSet", "Set");
+
+            splitMain.Panel2.Controls.Add(dgvData);
+
+            // ===================== panelBottom에 컨트롤 추가 =====================
             panelBottom.Controls.Add(btnConnect);
             panelBottom.Controls.Add(btnDisconnect);
             panelBottom.Controls.Add(btnStart);
@@ -193,13 +239,6 @@
             panelBottom.Controls.Add(lblPressure);
             panelBottom.Controls.Add(lblRpm);
 
-            // ===================== txtLog =====================
-            txtLog.Dock = DockStyle.Fill;
-            txtLog.Location = new Point(0, 0);
-            txtLog.Name = "txtLog";
-            txtLog.ReadOnly = true;
-            txtLog.ScrollBars = RichTextBoxScrollBars.Vertical;
-            txtLog.TabIndex = 0;
 
             // ===================== Form =====================
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -208,8 +247,7 @@
             Name = "Form1";
             Text = "EquipmentManager";
 
-            // 추가는 딱 2번만: panelBottom, txtLog
-            Controls.Add(txtLog);
+            Controls.Add(splitMain);
             Controls.Add(panelBottom);
 
             ResumeLayout(false);
