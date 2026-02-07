@@ -326,6 +326,12 @@ namespace EquipmentManager
             btnStart.Enabled = _connected && !isError;
             btnStop.Enabled = _connected && !isError;
 
+            lblConn.Text = _connected ? "CONNECTED" : "DISCONNECTED";
+            lblConn.ForeColor = _connected ? System.Drawing.Color.Green : System.Drawing.Color.DarkGray;
+
+            lblState.Text = $"STATE: {_equipState}";
+            lblState.ForeColor = (_equipState == EquipState.ERROR) ? System.Drawing.Color.Red : System.Drawing.Color.Black;
+
         }
 
 
@@ -362,8 +368,37 @@ namespace EquipmentManager
             // START 응답이면 RUN으로
             if (body.StartsWith("ACK|START|", StringComparison.OrdinalIgnoreCase))
             {
-                _equipState = EquipState.RUN;
-                UpdateUi();
+                var parts = body.Split('|');
+
+                // parts: 0 ACK, 1 STATUS, 2 STATE, 3 lastError, 4 mode, 5 setValue, 6 temp, 7 pressure, 8 rpm
+                if (parts.Length >= 4)
+                {
+                    _equipState = ParseEquipState(parts[2]);
+
+                    var lastErr = parts[3];
+                    if (InvokeRequired)
+                    {
+                        BeginInvoke(new Action(() =>
+                        {
+                            lblLastError.Text = $"ERR: {lastErr}";
+                            lblLastError.ForeColor = (string.Equals(lastErr, "NONE", StringComparison.OrdinalIgnoreCase))
+                                ? System.Drawing.Color.Black
+                                : System.Drawing.Color.Red;
+                        }));
+                    }
+                    else
+                    {
+                        lblLastError.Text = $"ERR: {lastErr}";
+                        lblLastError.ForeColor = (string.Equals(lastErr, "NONE", StringComparison.OrdinalIgnoreCase))
+                            ? System.Drawing.Color.Black
+                            : System.Drawing.Color.Red;
+                    }
+
+                    if (_equipState == EquipState.ERROR)
+                        LogErrorOnce("STATUS_ERROR", $"[CLIENT] {body}");
+
+                    UpdateUi();
+                }
                 return;
             }
 
@@ -412,10 +447,18 @@ namespace EquipmentManager
 
             if (body.StartsWith("ACK|RESET|", StringComparison.OrdinalIgnoreCase))
             {
-                _equipState = EquipState.IDLE;
-                _lastErrorKeyLogged = null;
-                UpdateUi();
-                return;
+                if (body.StartsWith("ACK|RESET|", StringComparison.OrdinalIgnoreCase))
+                {
+                    _equipState = EquipState.IDLE;
+                    _lastErrorKeyLogged = null;
+
+                    // UI 에러 라벨 초기화
+                    lblLastError.Text = "ERR: NONE";
+                    lblLastError.ForeColor = System.Drawing.Color.Black;
+
+                    UpdateUi();
+                    return;
+                }
             }
 
 

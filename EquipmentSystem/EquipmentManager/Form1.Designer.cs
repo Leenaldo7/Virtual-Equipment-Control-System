@@ -14,6 +14,11 @@
         private Button btnForceErr;
         private Button btnReset;
 
+        private Label lblConn;
+        private Label lblState;
+        private Label lblLastError;
+
+
         private RichTextBox txtLog;
         private Panel panelBottom;
 
@@ -144,12 +149,16 @@
             ClientSize = new Size(800, 450);
             Controls.Add(txtLog);
             Controls.Add(btnConnect);
-            Controls.Add(btnHello);
             Controls.Add(btnDisconnect);
+            Controls.Add(btnHello);   
             Controls.Add(btnStart);
             Controls.Add(btnStop);
             Controls.Add(btnForceErr);
             Controls.Add(btnReset);
+            Controls.Add(lblConn);
+            Controls.Add(lblState);
+            Controls.Add(lblLastError);
+
             Name = "Form1";
             Text = "Form1";
             ResumeLayout(false);
@@ -173,6 +182,31 @@
             // 폼에는 panelBottom 먼저, txtLog는 나중에(Fill이 남은 영역 먹게)
             Controls.Add(panelBottom);
             Controls.Add(txtLog);
+
+            lblConn = new Label();
+            lblState = new Label();
+            lblLastError = new Label();
+
+            // lblConn
+            lblConn.AutoSize = true;
+            lblConn.Location = new Point(120, 372);
+            lblConn.Name = "lblConn";
+            lblConn.Size = new Size(120, 15);
+            lblConn.Text = "DISCONNECTED";
+
+            // lblState
+            lblState.AutoSize = true;
+            lblState.Location = new Point(120, 398);
+            lblState.Name = "lblState";
+            lblState.Size = new Size(120, 15);
+            lblState.Text = "STATE: UNKNOWN";
+
+            // lblLastError
+            lblLastError.AutoSize = true;
+            lblLastError.Location = new Point(120, 424);
+            lblLastError.Name = "lblLastError";
+            lblLastError.Size = new Size(120, 15);
+            lblLastError.Text = "ERR: NONE";
 
 
         }
