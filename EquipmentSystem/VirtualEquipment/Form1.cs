@@ -248,6 +248,8 @@ namespace VirtualEquipment
 
                                                 _state = EquipState.RUN;
                                                 _alarmSentForCurrentError = false;
+                                                _lastError = "NONE";
+
                                                 // RUN 시작값 세팅
                                                 _rpm = Math.Clamp(value * 10, 0, 6000);
                                                 resp = "ACK|START|RUN";
@@ -293,6 +295,7 @@ namespace VirtualEquipment
                                                 _state = EquipState.IDLE;
                                                 _alarmSentForCurrentError = false;
                                                 _rpm = 0;
+                                                _lastError = "NONE";
                                                 resp = "ACK|RESET|IDLE";
                                             }
                                             else

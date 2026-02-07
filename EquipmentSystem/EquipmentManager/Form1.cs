@@ -417,31 +417,13 @@ namespace EquipmentManager
                 var parts = body.Split('|');
 
                 // parts: 0 ACK, 1 STATUS, 2 STATE, 3 lastError, 4 mode, 5 setValue, 6 temp, 7 pressure, 8 rpm
-                if (parts.Length >= 4)
+                if (parts.Length >= 3)
                 {
-                    _equipState = ParseEquipState(parts[2]);
+                    _equipState = ParseEquipState(parts[2]); // RUN / RUNNING 둘 다 처리
+                    SetStateUi(parts[2]);
 
-                    var lastErr = parts[3];
-                    if (InvokeRequired)
-                    {
-                        BeginInvoke(new Action(() =>
-                        {
-                            lblLastError.Text = $"ERR: {lastErr}";
-                            lblLastError.ForeColor = (string.Equals(lastErr, "NONE", StringComparison.OrdinalIgnoreCase))
-                                ? System.Drawing.Color.Black
-                                : System.Drawing.Color.Red;
-                        }));
-                    }
-                    else
-                    {
-                        lblLastError.Text = $"ERR: {lastErr}";
-                        lblLastError.ForeColor = (string.Equals(lastErr, "NONE", StringComparison.OrdinalIgnoreCase))
-                            ? System.Drawing.Color.Black
-                            : System.Drawing.Color.Red;
-                    }
-
-                    if (_equipState == EquipState.ERROR)
-                        LogErrorOnce("STATUS_ERROR", $"[CLIENT] {body}");
+                    // START 성공 시 에러는 유지하지 않는게 일반적(한다면, NONE으로)
+                    SetLastErrorUi("NONE");
 
                     UpdateUi();
                 }
@@ -451,9 +433,14 @@ namespace EquipmentManager
             // STOP 응답이면 STOP으로
             if (body.StartsWith("ACK|STOP|", StringComparison.OrdinalIgnoreCase))
             {
-                _equipState = EquipState.STOP;
-                UpdateUi();
-                return;
+                var parts = body.Split('|'); // 0 ACK, 1 STOP, 2 STOP(or IDLE/STATE)
+
+                if (parts.Length >= 3)
+                {
+                    _equipState = ParseEquipState(parts[2]);
+                    SetStateUi(parts[2]);
+                    UpdateUi();
+                }
             }
 
             // 서버가 에러를 주면 ERROR로 잠금
@@ -497,7 +484,7 @@ namespace EquipmentManager
                     SetStateUi(parts[2]);
                     SetLastErrorUi(parts[3]);
 
-                    // Telemetry 라벨 갱신(STATUS에도 값 들어있음)
+                    /*// Telemetry 라벨 갱신(STATUS에도 값 들어있음)
                     if (parts.Length >= 9)
                     {
                         _equipState = ParseEquipState(parts[2]);
@@ -508,7 +495,7 @@ namespace EquipmentManager
                         SetPressureUi(parts[7]);
                         SetRpmUi(parts[8]);
                         UpdateUi();
-                    }
+                    }*/
 
                     if (_equipState == EquipState.ERROR)
                         LogErrorOnce("STATUS_ERROR", $"[CLIENT] {body}");
@@ -523,10 +510,14 @@ namespace EquipmentManager
             {
                 if (body.StartsWith("ACK|RESET|", StringComparison.OrdinalIgnoreCase))
                 {
-                    _equipState = EquipState.IDLE;
+                    var parts = body.Split('|'); // 0 ACK, 1 RESET, 2 IDLE
+
                     _lastErrorKeyLogged = null;
-                    SetStateUi("IDLE");
+
+                    _equipState = (parts.Length >= 3) ? ParseEquipState(parts[2]) : EquipState.IDLE;
+                    SetStateUi((parts.Length >= 3) ? parts[2] : "IDLE");
                     SetLastErrorUi("NONE");
+
                     UpdateUi();
                     return;
                 }
