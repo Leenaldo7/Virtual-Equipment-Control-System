@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Drawing;
+using System.Diagnostics;
 
 namespace EquipmentManager
 {
@@ -69,7 +70,6 @@ namespace EquipmentManager
             if (_connected)
             {
                 Log("[CLIENT] Already connected.");
-                await TrySendAsync("STATUS");
                 return;
             }
 
@@ -91,6 +91,8 @@ namespace EquipmentManager
 
                 // 백그라운드 수신 루프 시작 (통신 분리 핵심)
                 _recvTask = RecvLoopAsync(_cts.Token);
+
+                await TrySendAsync("STATUS");
             }
             catch (Exception ex)
             {
@@ -416,8 +418,8 @@ namespace EquipmentManager
                     var press = parts[5];
                     var rpm = parts[6];
 
-                    AddTelemetryRow(ts, _equipState.ToString(), temp, press, rpm, mode, setv);
                     SetTelemetryLabels(ts, temp, press, rpm, mode, setv);
+                    AddSnapshot(ts, _equipState.ToString(), temp, press, rpm, mode, setv, isErrorRow: (_equipState == EquipState.ERROR));
                 }
                 return; // DATA는 파서 OK/FAIL과 무관하게 UI만 갱신
             }
@@ -425,14 +427,12 @@ namespace EquipmentManager
             // FORCEERR 응답 즉시 ERROR 잠금
             if (body.StartsWith("ACK|FORCEERR|", StringComparison.OrdinalIgnoreCase))
             {
-                if (body.StartsWith("ACK|FORCEERR|", StringComparison.OrdinalIgnoreCase))
-                {
-                    _equipState = EquipState.ERROR;
-                    SetLastErrorUi("FORCED");
-                    LogErrorOnce("FORCEERR", $"[CLIENT] {body}");
-                    UpdateUi();
-                    return;
-                }
+                _equipState = EquipState.ERROR;
+                SetStateUi("ERROR");
+                SetLastErrorUi("FORCED");
+                LogErrorOnce("FORCEERR", $"[CLIENT] {body}");
+                UpdateUi();
+                return;
             }
 
             // START 응답이면 RUN으로
@@ -473,6 +473,8 @@ namespace EquipmentManager
                 if (body.Contains("|IN_ERROR", StringComparison.OrdinalIgnoreCase))
                 {
                     _equipState = EquipState.ERROR;
+                    SetStateUi("ERROR");
+                    AddEventRowNow("ERROR");
                     LogErrorOnce(body, $"[CLIENT] {body}"); // 메시지 자체를 key로 써도 됨
                     UpdateUi();
                     return;
@@ -482,44 +484,56 @@ namespace EquipmentManager
 
             if (body.StartsWith("ALARM|ERROR|", StringComparison.OrdinalIgnoreCase))
             {
-                if (body.StartsWith("ALARM|ERROR|", StringComparison.OrdinalIgnoreCase))
+                var parts = body.Split('|');
+                // ALARM|ERROR|err|mode|set|temp|press|rpm
+                if (parts.Length >= 8)
                 {
+                    var err = parts[2];
+                    var mode = parts[3];
+                    var setv = parts[4];
+                    var temp = parts[5];
+                    var press = parts[6];
+                    var rpm = parts[7];
+
                     _equipState = EquipState.ERROR;
                     SetStateUi("ERROR");
+                    SetLastErrorUi(err);
 
-                    // ALARM|ERROR|FORCED 같은 포맷
-                    var parts = body.Split('|');
-                    var reason = (parts.Length >= 3) ? parts[2] : "UNKNOWN";
-                    SetLastErrorUi(reason);
+                    var ts = NowTs();
+                    SetTelemetryLabels(ts, temp, press, rpm, mode, setv);
+
+                    AddSnapshot(ts, "ERROR", temp, press, rpm, mode, setv, isErrorRow: true);
 
                     LogErrorOnce("ALARM_ERROR", $"[CLIENT] {body}");
                     UpdateUi();
-                    return;
                 }
+                return;
             }
+
 
             if (body.StartsWith("ACK|STATUS|", StringComparison.OrdinalIgnoreCase))
             {
                 var parts = body.Split('|');
                 // 0 ACK, 1 STATUS, 2 STATE, 3 lastError, 4 mode, 5 set, 6 temp, 7 pressure, 8 rpm
-                if (parts.Length >= 4)
+                if (parts.Length >= 9)
                 {
-                    _equipState = ParseEquipState(parts[2]);
-                    SetStateUi(parts[2]);
-                    SetLastErrorUi(parts[3]);
+                    var st = parts[2];
+                    var err = parts[3];
+                    var mode = parts[4];
+                    var setv = parts[5];
+                    var temp = parts[6];
+                    var press = parts[7];
+                    var rpm = parts[8];
+                    var ts = NowTs();
 
-                    /*// Telemetry 라벨 갱신(STATUS에도 값 들어있음)
-                    if (parts.Length >= 9)
-                    {
-                        _equipState = ParseEquipState(parts[2]);
-                        SetLastErrorUi(parts[3]);
-                        SetModeUi(parts[4]);
-                        SetSetValueUi(parts[5]);
-                        SetTempUi(parts[6]);
-                        SetPressureUi(parts[7]);
-                        SetRpmUi(parts[8]);
-                        UpdateUi();
-                    }*/
+                    _equipState = ParseEquipState(st);
+
+                    // 하단 라벨 갱신
+                    SetStateUi(st);
+                    SetLastErrorUi(err);
+                    SetTelemetryLabels(ts, temp, press, rpm, mode, setv);
+
+                    AddSnapshot(ts, st.ToUpperInvariant(), temp, press, rpm, mode, setv, isErrorRow: (_equipState == EquipState.ERROR));
 
                     if (_equipState == EquipState.ERROR)
                         LogErrorOnce("STATUS_ERROR", $"[CLIENT] {body}");
@@ -741,7 +755,28 @@ namespace EquipmentManager
                 return;
             }
 
-            dgvData.Rows.Add(ts, state, temp, press, rpm, mode, setv);
+            int idx = dgvData.Rows.Add(ts, state, temp, press, rpm, mode, setv);
+            var row = dgvData.Rows[idx];
+
+            // ERROR면 빨간 배경 + 흰 글자 + Bold
+            if (string.Equals(state, "ERROR", StringComparison.OrdinalIgnoreCase))
+            {
+                row.DefaultCellStyle.BackColor = Color.IndianRed;   // 진한 빨강
+                row.DefaultCellStyle.ForeColor = Color.White;
+                row.DefaultCellStyle.SelectionBackColor = Color.DarkRed;
+                row.DefaultCellStyle.SelectionForeColor = Color.White;
+                row.DefaultCellStyle.Font = new Font(dgvData.Font, FontStyle.Bold);
+            }
+            else
+            {
+                // 다른 상태는 기본으로 되돌리기(중요)
+                row.DefaultCellStyle.BackColor = dgvData.DefaultCellStyle.BackColor;
+                row.DefaultCellStyle.ForeColor = dgvData.DefaultCellStyle.ForeColor;
+                row.DefaultCellStyle.SelectionBackColor = dgvData.DefaultCellStyle.SelectionBackColor;
+                row.DefaultCellStyle.SelectionForeColor = dgvData.DefaultCellStyle.SelectionForeColor;
+                row.DefaultCellStyle.Font = dgvData.Font;
+            }
+
 
             while (dgvData.Rows.Count > MaxRows)
                 dgvData.Rows.RemoveAt(0);   // 오래된(위쪽) 제거
@@ -766,6 +801,37 @@ namespace EquipmentManager
             lblMode.Text = $"MODE: {mode}";
             lblSetValue.Text = $"SET: {setv}";
         }
+
+        private void AddEventRowNow(string state, string temp = "-", string press = "-", string rpm = "-", string mode = "-", string setv = "-")
+        {
+            var ts = DateTime.Now.ToString("HH:mm:ss.fff");
+            AddTelemetryRow(ts, state, temp, press, rpm, mode, setv);
+        }
+
+        private void AddSnapshot(string ts, string state, string temp, string press, string rpm, string mode, string setv, bool isErrorRow)
+        {
+            if (InvokeRequired) { BeginInvoke(new Action(() => AddSnapshot(ts, state, temp, press, rpm, mode, setv, isErrorRow))); return; }
+
+            dgvData.Rows.Add(ts, state, temp, press, rpm, mode, setv);
+
+            // 최신 50개 유지
+            while (dgvData.Rows.Count > MaxRows)
+                dgvData.Rows.RemoveAt(0);
+
+            // 방금 추가한 행 스타일
+            var row = dgvData.Rows[dgvData.Rows.Count - 1];
+            if (isErrorRow)
+            {
+                row.DefaultCellStyle.BackColor = Color.IndianRed; // 빨간 배경
+                row.DefaultCellStyle.ForeColor = Color.White;
+                row.DefaultCellStyle.Font = new Font(dgvData.Font, FontStyle.Bold);
+            }
+
+            // 자동 스크롤
+            dgvData.FirstDisplayedScrollingRowIndex = dgvData.Rows.Count - 1;
+        }
+
+        private static string NowTs() => DateTime.Now.ToString("HH:mm:ss.fff");
 
 
     }

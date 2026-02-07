@@ -89,7 +89,6 @@
 
         private Button btnStart;
         private Button btnStop;
-        private Panel panelTop;
         private Panel panelBottom;
     }
 }

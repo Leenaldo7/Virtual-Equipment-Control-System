@@ -36,7 +36,8 @@ namespace VirtualEquipment
 
         private bool _alarmSentForCurrentError = false;
 
-        private bool _alarmSent;
+        private EquipState _prevState = EquipState.IDLE;   // 이전 상태(전이 감지용)
+
 
 
         // ====== 연결된 클라이언트 목록(브로드캐스트용) ======
@@ -295,10 +296,9 @@ namespace VirtualEquipment
                                             if (_state == EquipState.ERROR)
                                             {
                                                 _state = EquipState.IDLE;
-                                                _alarmSentForCurrentError = false;
                                                 _rpm = 0;
                                                 _lastError = "NONE";
-                                                _alarmSent = false;
+                                                _alarmSentForCurrentError = false;
                                                 resp = "ACK|RESET|IDLE";
                                             }
                                             else
@@ -314,17 +314,15 @@ namespace VirtualEquipment
 
                                 case "FORCEERR":
                                     {
+                                        var resp = "ACK|FORCEERR|ERROR";
                                         lock (_stateLock)
                                         {
                                             _state = EquipState.ERROR;
-                                            _alarmSentForCurrentError = false; // ERROR 새로 발생 -> 알람 1회 허용
                                             _lastError = "FORCED";
                                             _rpm = 0;
-                                            _alarmSent = false;
+                                            _alarmSentForCurrentError = false;
                                         }
 
-                                        // FORCEERR에 대한 응답은 FORCEERR로 보내기
-                                        var resp = "ACK|FORCEERR|ERROR";
                                         await SendFrameAsync(conn, resp, serverCt);
                                         Log($"[SERVER] Sent: {resp}");
                                         break;
@@ -386,8 +384,8 @@ namespace VirtualEquipment
                             {
                                 _state = EquipState.ERROR;
                                 _lastError = "OVERSPEED";
-                                _alarmSentForCurrentError = false; // ERROR 새로 발생 -> 알람 1회 허용
                                 _rpm = 0; // 선택: 에러 진입시 rpm 0으로 정리
+                                _alarmSentForCurrentError = false;
                             }
                         }
 
@@ -418,21 +416,34 @@ namespace VirtualEquipment
                     else if (st == EquipState.ERROR)
                     {
                         bool needAlarm = false;
-                        string err;
+                        string err, mode2;
+                        int set2;
+                        double temp2, press2;
+                        int rpm2;
+
                         lock (_stateLock)
                         {
-                            if (!_alarmSent)
+                            // ERROR 상태에서 아직 알람 안 보냈으면 1회만
+                            if (!_alarmSentForCurrentError)
                             {
-                                _alarmSent = true;
+                                _alarmSentForCurrentError = true;
                                 needAlarm = true;
                             }
+
                             err = _lastError;
+                            mode2 = _mode;
+                            set2 = _setValue;
+                            temp2 = _temp;
+                            press2 = _pressure;
+                            rpm2 = _rpm;
                         }
 
                         if (needAlarm)
                         {
-                            await BroadcastAsync($"ALARM|ERROR|{err}", ct);
-                            Log($"[SERVER] Broadcast: ALARM|ERROR|{err}");
+                            var ts = DateTime.Now.ToString("HH:mm:ss.fff");
+                            var alarm = $"ALARM|ERROR|{err}|{mode2}|{set2}|{temp2:F1}|{press2:F2}|{rpm2}";
+                            await BroadcastAsync(alarm, ct);
+                            Log($"[SERVER] Broadcast: {alarm}");
                         }
 
                         await Task.Delay(500, ct);
@@ -582,6 +593,7 @@ namespace VirtualEquipment
             Log("[SERVER] Stopped.");
             UpdateUi();
         }
+
     }
 
 }
