@@ -50,30 +50,33 @@
         private void InitializeComponent()
         {
             txtLog = new RichTextBox();
+
             btnConnect = new Button();
-            btnHello = new Button();
             btnDisconnect = new Button();
             btnStart = new Button();
             btnStop = new Button();
+            btnHello = new Button();
             btnForceErr = new Button();
             btnReset = new Button();
+
             panelBottom = new Panel();
 
+            lblConn = new Label();
+            lblState = new Label();
+            lblLastError = new Label();
+            lblTime = new Label();
+            lblTemp = new Label();
+            lblPressure = new Label();
+            lblRpm = new Label();
+
             SuspendLayout();
-            // 
-            // txtLog
-            // 
-            txtLog.Dock = DockStyle.Fill;
-            txtLog.Location = new Point(0, 0);
-            txtLog.Multiline = true;
-            txtLog.Name = "txtLog";
-            txtLog.ReadOnly = true;
-            txtLog.ScrollBars = RichTextBoxScrollBars.Vertical;
-            txtLog.Size = new Size(800, 450);
-            txtLog.TabIndex = 0;
-            // 
+
+            // ===================== panelBottom =====================
+            panelBottom.Dock = DockStyle.Bottom;
+            panelBottom.Height = 90;
+            panelBottom.Name = "panelBottom";
+
             // btnConnect
-            // 
             btnConnect.Location = new Point(8, 10);
             btnConnect.Name = "btnConnect";
             btnConnect.Size = new Size(75, 23);
@@ -81,138 +84,136 @@
             btnConnect.Text = "Connect";
             btnConnect.UseVisualStyleBackColor = true;
             btnConnect.Click += btnConnect_Click;
-            // 
-            // btnHello
-            // 
-            btnHello.Location = new Point(208, 10);
-            btnHello.Name = "btnHello";
-            btnHello.Size = new Size(75, 23);
-            btnHello.TabIndex = 2;
-            btnHello.Text = "STATUS";
-            btnHello.UseVisualStyleBackColor = true;
-            btnHello.Click += btnHello_Click_1;
-            // 
-            // btnStart
-            // 
-            btnStart.Location = new Point(108, 10);
-            btnStart.Name = "btnStart";
-            btnStart.Size = new Size(75, 23);
-            btnStart.TabIndex = 4;
-            btnStart.Text = "START";
-            btnStart.UseVisualStyleBackColor = true;
-            btnStart.Click += btnStart_Click;
-            // 
-            // btnStop
-            // 
-            btnStop.Location = new Point(108, 45);
-            btnStop.Name = "btnStop";
-            btnStop.Size = new Size(75, 23);
-            btnStop.TabIndex = 5;
-            btnStop.Text = "STOP";
-            btnStop.UseVisualStyleBackColor = true;
-            btnStop.Click += btnStop_Click;
-            // 
+
             // btnDisconnect
-            // 
             btnDisconnect.Location = new Point(8, 45);
             btnDisconnect.Name = "btnDisconnect";
             btnDisconnect.Size = new Size(75, 23);
-            btnDisconnect.TabIndex = 3;
+            btnDisconnect.TabIndex = 2;
             btnDisconnect.Text = "Disconnect";
             btnDisconnect.UseVisualStyleBackColor = true;
             btnDisconnect.Click += bunDisconnect_Click;
 
-            // 
+            // btnStart
+            btnStart.Location = new Point(108, 10);
+            btnStart.Name = "btnStart";
+            btnStart.Size = new Size(75, 23);
+            btnStart.TabIndex = 3;
+            btnStart.Text = "START";
+            btnStart.UseVisualStyleBackColor = true;
+            btnStart.Click += btnStart_Click;
+
+            // btnStop
+            btnStop.Location = new Point(108, 45);
+            btnStop.Name = "btnStop";
+            btnStop.Size = new Size(75, 23);
+            btnStop.TabIndex = 4;
+            btnStop.Text = "STOP";
+            btnStop.UseVisualStyleBackColor = true;
+            btnStop.Click += btnStop_Click;
+
+            // btnHello (STATUS)
+            btnHello.Location = new Point(208, 10);
+            btnHello.Name = "btnHello";
+            btnHello.Size = new Size(75, 23);
+            btnHello.TabIndex = 5;
+            btnHello.Text = "STATUS";
+            btnHello.UseVisualStyleBackColor = true;
+            btnHello.Click += btnHello_Click_1;
+
             // btnForceErr
-            // 
             btnForceErr.Location = new Point(308, 10);
             btnForceErr.Name = "btnForceErr";
             btnForceErr.Size = new Size(95, 23);
-            btnForceErr.TabIndex = 4;
+            btnForceErr.TabIndex = 6;
             btnForceErr.Text = "FORCE ERR";
             btnForceErr.UseVisualStyleBackColor = true;
             btnForceErr.Click += btnForceErr_Click;
 
-            // 
             // btnReset
-            // 
             btnReset.Location = new Point(308, 45);
             btnReset.Name = "btnReset";
             btnReset.Size = new Size(95, 23);
-            btnReset.TabIndex = 5;
+            btnReset.TabIndex = 7;
             btnReset.Text = "RESET";
             btnReset.UseVisualStyleBackColor = true;
             btnReset.Click += btnReset_Click;
 
-            // 
-            // Form1
-            // 
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(800, 450);
-            Controls.Add(txtLog);
-            Controls.Add(btnConnect);
-            Controls.Add(btnDisconnect);
-            Controls.Add(btnHello);   
-            Controls.Add(btnStart);
-            Controls.Add(btnStop);
-            Controls.Add(btnForceErr);
-            Controls.Add(btnReset);
-            Controls.Add(lblConn);
-            Controls.Add(lblState);
-            Controls.Add(lblLastError);
+            // 라벨들 (panelBottom 안에 배치)
+            lblConn.AutoSize = true;
+            lblConn.Location = new Point(440, 12);
+            lblConn.Name = "lblConn";
+            lblConn.Text = "DISCONNECTED";
 
-            Name = "Form1";
-            Text = "Form1";
-            ResumeLayout(false);
-            PerformLayout();
-            //
-            // panelBottom
-            //
-            panelBottom.Dock = DockStyle.Bottom;
-            panelBottom.Height = 90;
-            panelBottom.Name = "panelBottom";
+            lblState.AutoSize = true;
+            lblState.Location = new Point(440, 32);
+            lblState.Name = "lblState";
+            lblState.Text = "STATE: UNKNOWN";
 
-            // 버튼은 panelBottom에
+            lblLastError.AutoSize = true;
+            lblLastError.Location = new Point(440, 52);
+            lblLastError.Name = "lblLastError";
+            lblLastError.Text = "ERR: NONE";
+
+            lblTime.AutoSize = true;
+            lblTime.Location = new Point(620, 12);
+            lblTime.Name = "lblTime";
+            lblTime.Text = "TIME: -";
+
+            lblTemp.AutoSize = true;
+            lblTemp.Location = new Point(620, 32);
+            lblTemp.Name = "lblTemp";
+            lblTemp.Text = "TEMP: -";
+
+            lblPressure.AutoSize = true;
+            lblPressure.Location = new Point(620, 52);
+            lblPressure.Name = "lblPressure";
+            lblPressure.Text = "PRESS: -";
+
+            lblRpm.AutoSize = true;
+            lblRpm.Location = new Point(620, 72);
+            lblRpm.Name = "lblRpm";
+            lblRpm.Text = "RPM: -";
+
+            // panelBottom에 컨트롤 추가
             panelBottom.Controls.Add(btnConnect);
-            panelBottom.Controls.Add(btnHello);
             panelBottom.Controls.Add(btnDisconnect);
             panelBottom.Controls.Add(btnStart);
             panelBottom.Controls.Add(btnStop);
+            panelBottom.Controls.Add(btnHello);
             panelBottom.Controls.Add(btnForceErr);
             panelBottom.Controls.Add(btnReset);
 
-            // 폼에는 panelBottom 먼저, txtLog는 나중에(Fill이 남은 영역 먹게)
-            Controls.Add(panelBottom);
+            panelBottom.Controls.Add(lblConn);
+            panelBottom.Controls.Add(lblState);
+            panelBottom.Controls.Add(lblLastError);
+            panelBottom.Controls.Add(lblTime);
+            panelBottom.Controls.Add(lblTemp);
+            panelBottom.Controls.Add(lblPressure);
+            panelBottom.Controls.Add(lblRpm);
+
+            // ===================== txtLog =====================
+            txtLog.Dock = DockStyle.Fill;
+            txtLog.Location = new Point(0, 0);
+            txtLog.Name = "txtLog";
+            txtLog.ReadOnly = true;
+            txtLog.ScrollBars = RichTextBoxScrollBars.Vertical;
+            txtLog.TabIndex = 0;
+
+            // ===================== Form =====================
+            AutoScaleDimensions = new SizeF(7F, 15F);
+            AutoScaleMode = AutoScaleMode.Font;
+            ClientSize = new Size(800, 450);
+            Name = "Form1";
+            Text = "EquipmentManager";
+
+            // 추가는 딱 2번만: panelBottom, txtLog
             Controls.Add(txtLog);
+            Controls.Add(panelBottom);
 
-            lblConn = new Label();
-            lblState = new Label();
-            lblLastError = new Label();
-
-            // lblConn
-            lblConn.AutoSize = true;
-            lblConn.Location = new Point(120, 372);
-            lblConn.Name = "lblConn";
-            lblConn.Size = new Size(120, 15);
-            lblConn.Text = "DISCONNECTED";
-
-            // lblState
-            lblState.AutoSize = true;
-            lblState.Location = new Point(120, 398);
-            lblState.Name = "lblState";
-            lblState.Size = new Size(120, 15);
-            lblState.Text = "STATE: UNKNOWN";
-
-            // lblLastError
-            lblLastError.AutoSize = true;
-            lblLastError.Location = new Point(120, 424);
-            lblLastError.Name = "lblLastError";
-            lblLastError.Size = new Size(120, 15);
-            lblLastError.Text = "ERR: NONE";
-
-
+            ResumeLayout(false);
         }
+
 
         #endregion
 

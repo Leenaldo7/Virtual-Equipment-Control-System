@@ -369,6 +369,22 @@ namespace EquipmentManager
 
         private void HandleServerMessage(string body)
         {
+            // DATA|ts|mode|setValue|temp|pressure|rpm
+            if (body.StartsWith("DATA|", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = body.Split('|');
+                if (parts.Length >= 7)
+                {
+                    var ts = parts[1];
+                    var temp = parts[4];
+                    var press = parts[5];
+                    var rpm = parts[6];
+
+                    SetTelemetryUi(ts, temp, press, rpm);
+                }
+                return; // DATA는 파서 OK/FAIL과 무관하게 UI만 갱신
+            }
+
             // FORCEERR 응답 즉시 ERROR 잠금
             if (body.StartsWith("ACK|FORCEERR|", StringComparison.OrdinalIgnoreCase))
             {
@@ -457,26 +473,32 @@ namespace EquipmentManager
                 }
             }
 
-
             if (body.StartsWith("ACK|STATUS|", StringComparison.OrdinalIgnoreCase))
             {
-                if (body.StartsWith("ACK|STATUS|", StringComparison.OrdinalIgnoreCase))
+                var parts = body.Split('|');
+                // 0 ACK, 1 STATUS, 2 STATE, 3 lastError, 4 mode, 5 set, 6 temp, 7 pressure, 8 rpm
+                if (parts.Length >= 4)
                 {
-                    var parts = body.Split('|');
-                    // 0 ACK, 1 STATUS, 2 STATE, 3 lastError ...
-                    if (parts.Length >= 4)
+                    _equipState = ParseEquipState(parts[2]);
+                    SetLastErrorUi(parts[3]);
+
+                    // Telemetry 라벨 갱신(STATUS에도 값 들어있음)
+                    if (parts.Length >= 9)
                     {
-                        _equipState = ParseEquipState(parts[2]);
-                        SetLastErrorUi(parts[3]);
-
-                        if (_equipState == EquipState.ERROR)
-                            LogErrorOnce("STATUS_ERROR", $"[CLIENT] {body}");
-
-                        UpdateUi();
+                        var temp = parts[6];
+                        var press = parts[7];
+                        var rpm = parts[8];
+                        SetTelemetryUi(DateTime.Now.ToString("HH:mm:ss"), temp, press, rpm);
                     }
-                    return;
+
+                    if (_equipState == EquipState.ERROR)
+                        LogErrorOnce("STATUS_ERROR", $"[CLIENT] {body}");
+
+                    UpdateUi();
                 }
+                return;
             }
+
 
             if (body.StartsWith("ACK|RESET|", StringComparison.OrdinalIgnoreCase))
             {
@@ -561,6 +583,21 @@ namespace EquipmentManager
             lblLastError.ForeColor =
                 string.Equals(err, "NONE", StringComparison.OrdinalIgnoreCase) ? Color.Black : Color.Red;
         }
+
+        private void SetTelemetryUi(string time, string temp, string pressure, string rpm)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => SetTelemetryUi(time, temp, pressure, rpm)));
+                return;
+            }
+
+            lblTime.Text = $"TIME: {time}";
+            lblTemp.Text = $"TEMP: {temp}";
+            lblPressure.Text = $"PRESS: {pressure}";
+            lblRpm.Text = $"RPM: {rpm}";
+        }
+
 
 
     }
