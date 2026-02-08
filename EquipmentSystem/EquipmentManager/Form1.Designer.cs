@@ -13,6 +13,7 @@
         private Button btnDisconnect;
         private Button btnForceErr;
         private Button btnReset;
+        private Button btnSimDrop;
 
         private Label lblConn;
         private Label lblState;
@@ -65,6 +66,7 @@
             btnHello = new Button();
             btnForceErr = new Button();
             btnReset = new Button();
+            btnSimDrop = new Button();
 
             panelBottom = new Panel();
 
@@ -148,6 +150,19 @@
             btnReset.Text = "RESET";
             btnReset.UseVisualStyleBackColor = true;
             btnReset.Click += btnReset_Click;
+
+            // btnSimDrop (강제 끊김 시뮬)
+            btnSimDrop.Location = new Point(420, 10);
+            btnSimDrop.Name = "btnSimDrop";
+            btnSimDrop.Size = new Size(95, 23);
+            btnSimDrop.TabIndex = 8;
+            btnSimDrop.Text = "SIM DROP";
+            btnSimDrop.UseVisualStyleBackColor = true;
+            btnSimDrop.Click += btnSimDrop_Click;
+
+            // panelBottom에 추가 (다른 버튼들 추가하는 곳에 같이)
+            panelBottom.Controls.Add(btnSimDrop);
+
 
             // 라벨들 (panelBottom 안에 배치)
             lblConn.AutoSize = true;
