@@ -39,7 +39,7 @@
 ## 🔄 Sequence & Architecture
 
 ### Auto-Reconnect Logic (Simplified)
-네트워크 단절 시 클라이언트가 서버로 재접속을 시도하는 지수 백오프(Exponential Backoff) 로직입니다.
+네트워크 단절 시 클라이언트가 서버로 재접속을 시도하는 로직입니다.
 
 ```mermaid
 sequenceDiagram
