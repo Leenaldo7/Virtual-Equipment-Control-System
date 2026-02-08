@@ -11,6 +11,7 @@ namespace EquipmentManager
 {
     public partial class Form1 : Form
     {
+        // ===== Connection =====
         private TcpClient? _client;
         private NetworkStream? _ns;
 
@@ -19,35 +20,47 @@ namespace EquipmentManager
 
         private readonly StxEtxFramer _framer = new StxEtxFramer();
         private readonly byte[] _recvBuf = new byte[4096];
-
-        // 동시에 Send 버튼 연타해도 Write가 엉키지 않게(선택 사항)
         private readonly SemaphoreSlim _sendLock = new SemaphoreSlim(1, 1);
 
         private volatile bool _connected;
 
-        private const string Host = "127.0.0.1";
-        private const int Port = 5000;
-        
-        // 장비 상태
-        private enum EquipState { Unknown, IDLE, RUN, STOP, ERROR }
-        private EquipState _equipState = EquipState.Unknown;
-
-        private string? _lastErrorKeyLogged; // 중복 에러 로그 방지용
-        private const int MaxRows = 50;
-
-        // Auto-Reconnect state
-        private volatile bool _userRequestedDisconnect = false;
+        // ===== Auto-Reconnect (single source of truth) =====
+        private volatile bool _autoReconnectEnabled = true; // 정책 플래그(Disconnect 누르면 false)
         private volatile bool _reconnecting = false;
 
         private int _reconnectAttempt = 0;
         private CancellationTokenSource? _reconnectCts;
         private Task? _reconnectTask;
 
-        private const int ReconnectDelayMs = 1500;     // 재시도 간격(ms)
-        private const int MaxReconnectAttempts = 20;   // 최대 재시도 횟수
+        private const int MaxReconnectAttempts = 20;
 
+        // Disconnect 중복 방지 + RecvLoop self-await 방지
+        private int _disconnecting = 0;
 
+        // ===== Config =====
+        private const string Host = "127.0.0.1";
+        private const int Port = 5000;
 
+        // ===== Equipment State =====
+        private enum EquipState { Unknown, IDLE, RUN, STOP, ERROR }
+        private EquipState _equipState = EquipState.Unknown;
+
+        private string? _lastErrorKeyLogged;
+        private const int MaxRows = 50;
+
+        private readonly Random _rnd = new Random();
+
+        // 재연결 딜레이: 최소/최대 캡
+        private const int ReconnectMinDelayMs = 800;
+        private const int ReconnectMaxDelayMs = 8000;
+
+        private const int FirstReconnectDelayMs = 5000; // 첫 재연결 시작까지 대기
+
+        // ===== STATUS polling (optional but recommended) =====
+        private CancellationTokenSource? _statusPollCts;
+        private Task? _statusPollTask;
+
+        private const int StatusPollIntervalMs = 2000; // 2초(원하면 1000~3000)
 
         public Form1()
         {
@@ -86,41 +99,21 @@ namespace EquipmentManager
                 return;
             }
 
-            try
-            {
-                _client = new TcpClient();
-                Log("[CLIENT] Connecting...");
+            // 수동 Connect는 자동재연결 ON (정책)
+            _autoReconnectEnabled = true;
 
-                // UI 안 멈춤
-                await _client.ConnectAsync(Host, Port);
+            // 혹시 재연결 루프가 돌고 있으면 중단(수동 connect가 우선)
+            StopAutoReconnect();
 
-                _ns = _client.GetStream();
-                _cts = new CancellationTokenSource();
-
-                _connected = true;
-                UpdateUi();
-                SetConnUi(true);
-                _userRequestedDisconnect = false;
-                Log("[CLIENT] Connected!");
-
-                // 백그라운드 수신 루프 시작 (통신 분리 핵심)
-                _recvTask = RecvLoopAsync(_cts.Token);
-
-                await TrySendAsync("STATUS");
-            }
-            catch (Exception ex)
-            {
-                Log($"[CLIENT] Connect failed: {ex.Message}");
-                await DisconnectAsync("Connect failed");
-            }
+            await ConnectAsync(isReconnect: false);
         }
 
-        // Disconnect 버튼
+        // Disconnect 버튼 : 사용자가 누르면, 자동재연결 X
         private async void btnDisconnect_Click(object sender, EventArgs e)
         {
-            _userRequestedDisconnect = true;
-            _reconnectCts?.Cancel(); // 진행 중 재접속 루프 있으면 중단
-            await DisconnectAsync("User requested");
+            _autoReconnectEnabled = false;              // 사용자 Disconnect면 자동재연결 OFF
+            StopAutoReconnect();                        // 혹시 돌고 있으면 중단
+            await DisconnectAsync("User requested", suppressAutoReconnect: true);
         }
 
         // STATUS 버튼(기존 btnHello 버튼을 STATUS로 쓰는 경우)
@@ -266,10 +259,8 @@ namespace EquipmentManager
             }
             finally
             {
-                // 수신 루프가 끝났다는 건 연결이 끊겼거나 종료 요청
-                // 이미 끊는 중이면 중복 로그 줄이기 위해 조건 처리
                 if (_connected)
-                    await DisconnectAsync("RecvLoop ended");
+                    await DisconnectAsync("RecvLoop ended", suppressAutoReconnect: false, fromRecvLoop: true);
             }
         }
 
@@ -294,90 +285,93 @@ namespace EquipmentManager
                 SetConnUi(true);
                 Log("[CLIENT] Connected!");
 
+                _reconnectAttempt = 0;
+                _reconnecting = false;
+                SetConnUiReconnecting(null);
+
                 // 수신 루프 시작
                 _recvTask = RecvLoopAsync(_cts.Token);
 
                 // 연결 직후 상태 한번 당겨오기(현장감 + UI 동기화)
                 await TrySendAsync("STATUS");
+                // 연결 유지 중 STATUS polling 시작
+                StartStatusPolling();
 
+                SetConnUiReconnecting(null);
                 UpdateUi();
             }
             catch (Exception ex)
             {
                 Log($"[CLIENT] Connect failed: {ex.Message}");
 
-                // 실패 시 자원 정리(부분 연결 상태 방지)
-                await DisconnectAsync("Connect failed", suppressAutoReconnect: true);
+                // 실패 시에는 "가벼운 정리"만
+                try { _cts?.Cancel(); } catch { }
+                try { _ns?.Close(); } catch { }
+                try { _client?.Close(); } catch { }
+                Cleanup();
 
-                // 재연결 모드면 루프가 계속 시도하게 둠
-                if (isReconnect)
-                    return;
-
-                // 수동 connect 실패는 여기서 끝
+                _connected = false;
+                // 재연결 중이면 라벨은 루프가 계속 갱신하므로 여기서 건드리지 않아도 됨
+                if (!isReconnect)
+                {
+                    SetConnUi(false);
+                    SetConnUiReconnecting(null);
+                    UpdateUi();
+                }
             }
         }
 
         // 안전 종료: Cancel → Close/Dispose로 ReadAsync 깨우기 → 정리
         // suppressAutoReconnect = true 로 호출하면 Disconnect 이후 재연결 루프를 시작하지 않음
-        private async Task DisconnectAsync(string reason, bool suppressAutoReconnect = false)
+        private async Task DisconnectAsync(string reason, bool suppressAutoReconnect = false, bool fromRecvLoop = false)
         {
-            if (!_connected && _client == null && _ns == null)
-            {
-                // 연결이 이미 없더라도 UI는 안정적으로 맞춰줌
-                SetConnUi(false);
-                UpdateUi();
+            if (Interlocked.Exchange(ref _disconnecting, 1) == 1)
                 return;
-            }
 
-            Log($"[CLIENT] Disconnecting... ({reason})");
-
-            _connected = false;
-            UpdateUi();
-
-            try { _cts?.Cancel(); } catch { }
-            try { _ns?.Close(); } catch { }
-            try { _client?.Close(); } catch { }
-
-            // 수신 태스크가 있으면 잠깐 정리 (UI 블로킹 피하려면 await)
             try
             {
-                if (_recvTask != null)
-                    await _recvTask;
-            }
-            catch { /* 종료 중 예외는 무시 */ }
+                if (!_connected && _client == null && _ns == null)
+                    return;
 
-            Cleanup();
+                Log($"[CLIENT] Disconnecting... ({reason})");
 
-            _equipState = EquipState.Unknown;
-            _lastErrorKeyLogged = null;
+                _connected = false;
+                // polling 중지
+                StopStatusPolling();
+                UpdateUi();
+                SetConnUi(false);
+                // UI를 즉시 끊김 상태로 확정 (스샷에서 “옆 상태 안바뀜” 방지)
+                _equipState = EquipState.Unknown;
+                SetStateUi("UNKNOWN");
+                SetLastErrorUi("NONE");
+                SetTelemetryLabels("-", "-", "-", "-", "-", "-");
+                UpdateUi();
 
-            SetConnUi(false);
-            SetStateUi("UNKNOWN");
-            SetLastErrorUi("NONE");
+                try { _cts?.Cancel(); } catch { }
+                try { _ns?.Close(); } catch { }
+                try { _client?.Close(); } catch { }
 
-            if (InvokeRequired)
-            {
-                BeginInvoke(new Action(() =>
+                // RecvLoop에서 호출된 Disconnect는 자기 자신 await 금지
+                if (!fromRecvLoop)
                 {
-                    lblLastError.Text = "ERR: NONE";
-                    lblLastError.ForeColor = Color.Black;
-                }));
-            }
-            else
-            {
-                lblLastError.Text = "ERR: NONE";
-                lblLastError.ForeColor = Color.Black;
-            }
+                    try { if (_recvTask != null) await _recvTask; } catch { }
+                }
 
-            // Auto-Reconnect: 유저가 끊은게 아니고, suppressAutoReconnect도 아니면 재접속 시작
-            if (!suppressAutoReconnect && !_userRequestedDisconnect)
-            {
-                StartAutoReconnect();
-            }
+                Cleanup();
 
-            Log("[CLIENT] Disconnected.");
-            UpdateUi();
+                Log("[CLIENT] Disconnected.");
+                UpdateUi();
+
+                // 자동재연결: 비정상 끊김 + 정책 ON + suppressAutoReconnect=false 일 때만
+                if (!suppressAutoReconnect && _autoReconnectEnabled)
+                    StartAutoReconnect();
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _disconnecting, 0);
+            }
         }
+
 
         // 장비 상태에 따른 버튼 비활성화
         private void ApplyEquipState(EquipState st)
@@ -425,77 +419,21 @@ namespace EquipmentManager
             _recvTask = null;
         }
 
-        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            _userRequestedDisconnect = true;
-            StopReconnectLoop();
-            // 폼 닫힐 때는 fire-and-forget (async void로 대기하면 UI 종료가 지연될 수 있음)
-            _ = DisconnectAsync("Form closing");
-        }
-
         // Auto Reconnect 
-        private void StartReconnectLoop()
+        private void StopAutoReconnect()
         {
-            if (_reconnectTask != null && !_reconnectTask.IsCompleted)
-                return;
+            _reconnecting = false;
 
-            _reconnecting = true;
-            _reconnectAttempt = 0;
-
-            _reconnectCts = new CancellationTokenSource();
-            var ct = _reconnectCts.Token;
-
-            _reconnectTask = Task.Run(async () =>
-            {
-                Log("[CLIENT] Auto-Reconnect started.");
-
-                while (!ct.IsCancellationRequested && !_userRequestedDisconnect)
-                {
-                    if (_connected)
-                        break;
-
-                    _reconnectAttempt++;
-
-                    // UI: reconnecting 표시
-                    SetConnUiReconnecting(_reconnectAttempt);
-
-                    // 백오프(1,2,3,5,5,5...)
-                    int delayMs = GetReconnectDelayMs(_reconnectAttempt);
-
-                    try
-                    {
-                        await ConnectAsync(isReconnect: true);
-
-                        if (_connected)
-                        {
-                            Log("[CLIENT] Auto-Reconnect success.");
-                            return;
-                        }
-                    }
-                    catch { /* ConnectAsync 내부에서 로그 처리 */ }
-
-                    try
-                    {
-                        await Task.Delay(delayMs, ct);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
-                }
-
-                Log("[CLIENT] Auto-Reconnect stopped.");
-            }, ct);
-        }
-
-        private void StopReconnectLoop()
-        {
             try { _reconnectCts?.Cancel(); } catch { }
             try { _reconnectCts?.Dispose(); } catch { }
-            _reconnectCts = null;
 
-            _reconnecting = false;
+            _reconnectCts = null;
+            _reconnectTask = null;
             _reconnectAttempt = 0;
+
+
+            SetConnUiReconnecting(null); // 라벨 원복
+            UpdateUi();
         }
 
         private void StartAutoReconnect()
@@ -503,23 +441,31 @@ namespace EquipmentManager
             // 이미 돌고 있으면 중복 시작 방지
             if (_reconnectTask != null && !_reconnectTask.IsCompleted) return;
 
+            _reconnecting = true;
+            _reconnectAttempt = 0;
+
             _reconnectCts?.Cancel();
             _reconnectCts?.Dispose();
             _reconnectCts = new CancellationTokenSource();
 
-            _reconnectAttempt = 0;
+            SetConnUiReconnecting(0);  // "RECONNECTING...” 즉시 표시
+            UpdateUi();                // 버튼 잠금 반영
 
             _reconnectTask = Task.Run(() => AutoReconnectLoopAsync(_reconnectCts.Token));
         }
 
-        private static int GetReconnectDelayMs(int attempt)
+        private int GetReconnectDelayMs(int attempt)
         {
-            // 1->1000, 2->2000, 3->3000, 4+->5000
-            if (attempt <= 1) return 1000;
-            if (attempt == 2) return 2000;
-            if (attempt == 3) return 3000;
-            return 5000;
+            // attempt: 1,2,3...
+            // base = 800ms * 2^(attempt-1), 최대 8000ms 캡
+            double baseDelay = ReconnectMinDelayMs * Math.Pow(2, Math.Min(attempt - 1, 4)); // 800,1600,3200,6400,8000...
+            int capped = (int)Math.Min(baseDelay, ReconnectMaxDelayMs);
+
+            // 지터(랜덤) 0~250ms 추가: 여러 클라가 동시에 붙을 때 “동시 폭주” 방지
+            int jitter = _rnd.Next(0, 251);
+            return capped + jitter;
         }
+
 
         private void UpdateUi()
         {
@@ -530,15 +476,18 @@ namespace EquipmentManager
             }
 
             bool isError = _equipState == EquipState.ERROR;
+            bool busyReconnecting = _reconnecting && !_connected;
 
-            btnConnect.Enabled = !_connected;
-            btnDisconnect.Enabled = _connected;
+            btnConnect.Enabled = !_connected && !busyReconnecting; // 재연결 중엔 수동 Connect 막기(꼬임 방지)
+            btnDisconnect.Enabled = _connected || busyReconnecting; // 재연결 중에도 “중단” 버튼으로 쓰고 싶으면 true
 
-            btnHello.Enabled = _connected;        // STATUS는 항상 OK
-            btnReset.Enabled = _connected;        // 항상 OK
-            btnForceErr.Enabled = _connected && !isError;
-            btnStart.Enabled = _connected && !isError;
-            btnStop.Enabled = _connected && !isError;
+            // 재연결 중엔 명령 버튼들 잠금 (현업 UX)
+            btnHello.Enabled = _connected && !busyReconnecting;
+            btnReset.Enabled = _connected && !busyReconnecting;
+            btnForceErr.Enabled = _connected && !busyReconnecting && !isError;
+            btnStart.Enabled = _connected && !busyReconnecting && !isError;
+            btnStop.Enabled = _connected && !busyReconnecting && !isError;
+
             btnSimDrop.Enabled = _connected;  // 연결 중일 때만 눌러서 강제끊김 시뮬
 
             lblConn.Text = _connected ? "CONNECTED" : "DISCONNECTED";
@@ -561,12 +510,6 @@ namespace EquipmentManager
             txtLog.ScrollToCaret();
         }
 
-        // 디자이너가 이 핸들러를 쓰면 유지
-        private async void bunDisconnect_Click(object sender, EventArgs e)
-        {
-            await DisconnectAsync("User requested");
-        }
-
         private void btnHello_Click_1(object sender, EventArgs e) => btnHello_Click(sender, e);
 
 
@@ -585,8 +528,20 @@ namespace EquipmentManager
                     var press = parts[5];
                     var rpm = parts[6];
 
+                    // DATA가 온다는 건 서버가 RUN에서 브로드캐스트 중이라는 뜻
+                    // 재연결 직후 STATUS를 아직 못 받았어도 RUN으로 UI 보정
+                    if (_equipState == EquipState.Unknown || _equipState == EquipState.IDLE || _equipState == EquipState.STOP)
+                    {
+                        _equipState = EquipState.RUN;
+                        SetStateUi("RUN");
+                        UpdateUi();
+                    }
+
+
                     SetTelemetryLabels(ts, temp, press, rpm, mode, setv);
-                    AddSnapshot(ts, _equipState.ToString(), temp, press, rpm, mode, setv, isErrorRow: (_equipState == EquipState.ERROR));
+                    // 여기서 _equipState.ToString()이 Unknown이면 표에도 Unknown 뜨니까, 위에서 보정 후 넣기
+                    AddSnapshot(ts, _equipState.ToString(), temp, press, rpm, mode, setv,
+                        isErrorRow: (_equipState == EquipState.ERROR));
                 }
                 return; // DATA는 파서 OK/FAIL과 무관하게 UI만 갱신
             }
@@ -1032,8 +987,8 @@ namespace EquipmentManager
                 return;
             }
 
-            // 유저가 끊은게 아니므로 false 유지 (Auto-Reconnect 되게)
-            _userRequestedDisconnect = false;
+            // 장애 상황 => 자동재연결 유지
+            _autoReconnectEnabled = true;
 
             Log("[CLIENT] *** SIMULATE NETWORK DROP *** (force close socket)");
 
@@ -1046,55 +1001,91 @@ namespace EquipmentManager
         {
             Log("[CLIENT] Auto-Reconnect started.");
 
-            while (!ct.IsCancellationRequested && !_connected && !_userRequestedDisconnect)
+            _reconnecting = true;
+            SetConnUiReconnecting(0);
+            UpdateUi();
+
+            try
             {
-                _reconnectAttempt++;
-                SetConnUiReconnecting(_reconnectAttempt);
-
-                if (_reconnectAttempt > MaxReconnectAttempts)
+                while (!ct.IsCancellationRequested && !_connected && _autoReconnectEnabled)
                 {
-                    Log("[CLIENT] Auto-Reconnect gave up (max attempts).");
-                    break;
-                }
+                    _reconnectAttempt++;
 
-                try
-                {
-                    // 기존 Connect 로직을 "재사용"하기 위해 내부 Connect 함수 만들어도 되지만,
-                    // 지금은 Connect 코드 일부를 여기서 수행
-                    _client = new TcpClient();
+                    if (_reconnectAttempt > MaxReconnectAttempts)
+                    {
+                        Log("[CLIENT] Auto-Reconnect gave up (max attempts).");
+                        break;
+                    }
+
+                    SetConnUiReconnecting(_reconnectAttempt);
+                    UpdateUi();
+
+                    int delayMs = (_reconnectAttempt == 1)
+                        ? FirstReconnectDelayMs
+                        : GetReconnectDelayMs(_reconnectAttempt);
+
+                    Log($"[CLIENT] Waiting {delayMs}ms before reconnect attempt #{_reconnectAttempt}...");
+                    await Task.Delay(delayMs, ct);
+
                     Log($"[CLIENT] Reconnect attempt #{_reconnectAttempt}...");
 
-                    await _client.ConnectAsync(Host, Port);
+                    await ConnectAsync(isReconnect: true);
 
-                    _ns = _client.GetStream();
-                    _cts = new CancellationTokenSource();
-
-                    _connected = true;
-                    _equipState = EquipState.Unknown;
-
-                    SetConnUi(true);
-                    UpdateUi();
-                    Log("[CLIENT] Reconnected!");
-
-                    _recvTask = RecvLoopAsync(_cts.Token);
-
-                    // 재연결 성공하면 상태 복구용 STATUS 1회 요청
-                    await TrySendAsync("STATUS");
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    Log($"[CLIENT] Reconnect failed: {ex.Message}");
-                    // 실패하면 잠깐 쉬고 재시도
-                    try { await Task.Delay(ReconnectDelayMs, ct); } catch { }
+                    if (_connected)
+                    {
+                        Log("[CLIENT] Auto-Reconnect success.");
+                        return;
+                    }
                 }
             }
+            catch (OperationCanceledException)
+            {
+                // 정상 중단
+            }
+            catch (Exception ex)
+            {
+                Log($"[CLIENT] Auto-Reconnect loop error: {ex.Message}");
+            }
+            finally
+            {
+                _reconnecting = false;
+                SetConnUiReconnecting(null);
+                UpdateUi();
+                Log("[CLIENT] Auto-Reconnect ended.");
+            }
+        }
 
-            // 최종 UI 반영
-            if (!_connected)
-                SetConnUi(false);
 
-            Log("[CLIENT] Auto-Reconnect ended.");
+        private void StartStatusPolling()
+        {
+            StopStatusPolling();
+
+            if (!_connected) return;
+
+            _statusPollCts = new CancellationTokenSource();
+            var ct = _statusPollCts.Token;
+
+            _statusPollTask = Task.Run(async () =>
+            {
+                while (!ct.IsCancellationRequested)
+                {
+                    try
+                    {
+                        if (_connected) await TrySendAsync("STATUS");
+                        await Task.Delay(StatusPollIntervalMs, ct);
+                    }
+                    catch (OperationCanceledException) { break; }
+                    catch { /* 끊기면 RecvLoop가 처리 */ }
+                }
+            }, ct);
+        }
+
+        private void StopStatusPolling()
+        {
+            try { _statusPollCts?.Cancel(); } catch { }
+            try { _statusPollCts?.Dispose(); } catch { }
+            _statusPollCts = null;
+            _statusPollTask = null;
         }
 
 
